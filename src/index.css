@@ -1,0 +1,201 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import '@fontsource-variable/instrument-sans';
+@import '@fontsource-variable/bricolage-grotesque';
+@import '@fontsource-variable/jetbrains-mono';
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Design tokens. Light and dark are designed separately rather than inverted:
+ * the dark theme has its own canvas, a brighter accent and dark-on-accent text.
+ * Motion tokens at the bottom are mirrored in src/lib/motion.ts.
+ */
+:root {
+  --radius: 0.625rem;
+
+  --background: oklch(0.982 0.004 175);
+  --foreground: oklch(0.2 0.015 190);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.2 0.015 190);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.2 0.015 190);
+  --primary: oklch(0.5 0.1 176);
+  --primary-foreground: oklch(0.99 0.008 175);
+  --secondary: oklch(0.955 0.006 175);
+  --secondary-foreground: oklch(0.26 0.02 190);
+  --muted: oklch(0.96 0.005 175);
+  --muted-foreground: oklch(0.47 0.016 190);
+  --accent: oklch(0.945 0.025 176);
+  --accent-foreground: oklch(0.32 0.07 180);
+  --destructive: oklch(0.52 0.19 27);
+  --warning: oklch(0.78 0.15 78);
+  --warning-foreground: oklch(0.36 0.07 70);
+  --border: oklch(0.91 0.008 175);
+  --input: oklch(0.87 0.01 175);
+  --ring: oklch(0.58 0.11 176);
+
+  --canvas: oklch(0.94 0.007 175);
+  --canvas-dot: oklch(0.82 0.012 175);
+  --paper: oklch(1 0 0);
+  --paper-shadow:
+    0 0 0 1px oklch(0.2 0.02 190 / 0.1), 0 1px 2px oklch(0.2 0.02 190 / 0.08),
+    0 12px 28px -10px oklch(0.2 0.02 190 / 0.22);
+
+  --ease-enter: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --dur-enter: 220ms;
+  --dur-exit: 150ms;
+  --dur-zoom: 260ms;
+}
+
+.dark {
+  color-scheme: dark;
+
+  --background: oklch(0.18 0.01 190);
+  --foreground: oklch(0.95 0.008 175);
+  --card: oklch(0.215 0.011 190);
+  --card-foreground: oklch(0.95 0.008 175);
+  --popover: oklch(0.245 0.012 190);
+  --popover-foreground: oklch(0.95 0.008 175);
+  --primary: oklch(0.77 0.125 172);
+  --primary-foreground: oklch(0.2 0.03 190);
+  --secondary: oklch(0.275 0.012 190);
+  --secondary-foreground: oklch(0.93 0.008 175);
+  --muted: oklch(0.255 0.011 190);
+  --muted-foreground: oklch(0.72 0.016 185);
+  --accent: oklch(0.31 0.045 180);
+  --accent-foreground: oklch(0.93 0.04 172);
+  --destructive: oklch(0.7 0.17 22);
+  --warning: oklch(0.82 0.14 82);
+  --warning-foreground: oklch(0.88 0.1 85);
+  --border: oklch(0.3 0.012 190);
+  --input: oklch(0.36 0.014 190);
+  --ring: oklch(0.7 0.11 172);
+
+  --canvas: oklch(0.145 0.008 190);
+  --canvas-dot: oklch(0.29 0.012 190);
+  --paper: oklch(0.99 0.002 175);
+  --paper-shadow:
+    0 0 0 1px oklch(0 0 0 / 0.5), 0 2px 4px oklch(0 0 0 / 0.35),
+    0 18px 40px -12px oklch(0 0 0 / 0.65);
+}
+
+@theme inline {
+  --font-sans: 'Instrument Sans Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-display:
+    'Bricolage Grotesque Variable', 'Instrument Sans Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-canvas: var(--canvas);
+  --color-paper: var(--paper);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-background font-sans text-foreground antialiased;
+    overscroll-behavior: none;
+  }
+
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']) {
+    cursor: pointer;
+  }
+}
+
+/* Binds Radix/tw-animate overlays to the shared enter and exit tokens. */
+@utility overlay-motion {
+  --tw-duration: var(--dur-enter);
+  --tw-ease: var(--ease-enter);
+  &[data-state='closed'] {
+    --tw-duration: var(--dur-exit);
+    --tw-ease: var(--ease-exit);
+  }
+}
+
+/*
+ * Gives a small control a 44px touch target on touch screens without changing how it looks.
+ * The element must be positioned; the invisible pseudo-element is part of its hit area.
+ */
+@utility touch-target {
+  @media (pointer: coarse) {
+    &::before {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: max(100%, 44px);
+      height: max(100%, 44px);
+      transform: translate(-50%, -50%);
+    }
+  }
+}
+
+@utility canvas-surface {
+  background-color: var(--canvas);
+  background-image: radial-gradient(var(--canvas-dot) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+@utility sheet-paper {
+  background-color: var(--paper);
+  box-shadow: var(--paper-shadow);
+}
+
+/*
+ * Zoom changes ease the sheet width. While the panel divider is being dragged
+ * the width must follow the pointer exactly, so the easing is switched off.
+ */
+.sheet-page {
+  transition: width var(--dur-zoom) var(--ease-enter);
+}
+
+body:has([data-separator='active']) .sheet-page {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
