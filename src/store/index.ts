@@ -1,9 +1,9 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { DEFAULT_PRINT_OPTIONS, type PrintOptions } from '@/lib/print-options'
+import { sanitizeOptions, type PrintOptions } from '@/lib/print-options'
 import { createImagesSlice } from './images-slice'
 import { createOptionsSlice } from './options-slice'
-import { createUiSlice, DEFAULT_PANEL_LAYOUT } from './ui-slice'
+import { createUiSlice, sanitizePanelLayout } from './ui-slice'
 import type { AppState } from './types'
 
 interface PersistedState {
@@ -30,8 +30,8 @@ export const useAppStore = create<AppState>()(
         const saved = (persisted ?? {}) as Partial<PersistedState>
         return {
           ...current,
-          options: { ...DEFAULT_PRINT_OPTIONS, ...saved.options },
-          panelLayout: { ...DEFAULT_PANEL_LAYOUT, ...saved.panelLayout },
+          options: sanitizeOptions(saved.options),
+          panelLayout: sanitizePanelLayout(saved.panelLayout),
         }
       },
     },

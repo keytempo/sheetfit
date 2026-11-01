@@ -1,9 +1,15 @@
-import type { Unit } from './units'
+import { clamp } from './utils'
+import { UNITS, type Unit } from './units'
 
-export type SheetSizeId = 'a3' | 'a4' | 'a5' | 'a6' | 'letter' | 'legal' | 'tabloid' | 'custom'
-export type Orientation = 'portrait' | 'landscape' | 'auto'
-export type BaseSizeMode = 'width' | 'height' | 'longest' | 'native'
-export type Ordering = 'optimize' | 'strict'
+const SHEET_SIZE_IDS = ['a3', 'a4', 'a5', 'a6', 'letter', 'legal', 'tabloid', 'custom'] as const
+const ORIENTATIONS = ['portrait', 'landscape', 'auto'] as const
+const BASE_SIZE_MODES = ['width', 'height', 'longest', 'native'] as const
+const ORDERINGS = ['optimize', 'strict'] as const
+
+export type SheetSizeId = (typeof SHEET_SIZE_IDS)[number]
+export type Orientation = (typeof ORIENTATIONS)[number]
+export type BaseSizeMode = (typeof BASE_SIZE_MODES)[number]
+export type Ordering = (typeof ORDERINGS)[number]
 
 /** Every value that is a length is stored in millimetres, whatever unit is displayed. */
 export interface PrintOptions {
@@ -23,6 +29,22 @@ export interface PrintOptions {
   showMargins: boolean
   showSheetNumbers: boolean
 }
+
+/** The options that decide how large a photo prints and where it is placed. The rest only change how things look. */
+export type LayoutOptions = Pick<
+  PrintOptions,
+  | 'sheetSize'
+  | 'customWidth'
+  | 'customHeight'
+  | 'orientation'
+  | 'baseMode'
+  | 'baseLength'
+  | 'baseDpi'
+  | 'margin'
+  | 'gap'
+  | 'allowRotation'
+  | 'ordering'
+>
 
 export const DEFAULT_PRINT_OPTIONS: PrintOptions = {
   unit: 'mm',
@@ -51,3 +73,42 @@ export const LIMITS = {
   margin: { min: 0, max: 50 },
   gap: { min: 0, max: 30 },
 } as const
+
+const pick = <T extends string>(value: unknown, allowed: readonly T[], fallback: T): T =>
+  allowed.find((item) => item === value) ?? fallback
+
+const bounded = (value: unknown, range: { min: number; max: number }, fallback: number) =>
+  typeof value === 'number' && Number.isFinite(value)
+    ? clamp(value, range.min, range.max)
+    : fallback
+
+const flag = (value: unknown, fallback: boolean) => (typeof value === 'boolean' ? value : fallback)
+
+/**
+ * Turns whatever was saved in the browser into valid options. Settings come back from storage that
+ * a person, an older version or another tab may have changed, so every value is checked: one that is
+ * missing, of the wrong kind or out of range falls back to its default or its nearest limit, and
+ * never reaches the sheet and size calculations.
+ */
+export function sanitizeOptions(saved: unknown): PrintOptions {
+  const source =
+    typeof saved === 'object' && saved !== null ? (saved as Record<string, unknown>) : {}
+  const d = DEFAULT_PRINT_OPTIONS
+  return {
+    unit: pick(source.unit, UNITS, d.unit),
+    sheetSize: pick(source.sheetSize, SHEET_SIZE_IDS, d.sheetSize),
+    customWidth: bounded(source.customWidth, LIMITS.sheetSide, d.customWidth),
+    customHeight: bounded(source.customHeight, LIMITS.sheetSide, d.customHeight),
+    orientation: pick(source.orientation, ORIENTATIONS, d.orientation),
+    baseMode: pick(source.baseMode, BASE_SIZE_MODES, d.baseMode),
+    baseLength: bounded(source.baseLength, LIMITS.baseLength, d.baseLength),
+    baseDpi: bounded(source.baseDpi, LIMITS.dpi, d.baseDpi),
+    margin: bounded(source.margin, LIMITS.margin, d.margin),
+    gap: bounded(source.gap, LIMITS.gap, d.gap),
+    allowRotation: flag(source.allowRotation, d.allowRotation),
+    ordering: pick(source.ordering, ORDERINGS, d.ordering),
+    cutGuides: flag(source.cutGuides, d.cutGuides),
+    showMargins: flag(source.showMargins, d.showMargins),
+    showSheetNumbers: flag(source.showSheetNumbers, d.showSheetNumbers),
+  }
+}

@@ -1,13 +1,12 @@
-import { FlaskConicalIcon } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
 import { useAppStore } from '@/store'
-import { useSheetLayout } from '@/store/derived'
+import { useSheetLayout } from '@/store/layout-context'
+import { PackingStatus } from './packing-status'
 import { PreviewToolbar } from './preview-toolbar'
 import { SheetCanvas } from './sheet-canvas'
 
-/** The right panel. It computes the layout once and hands it to the toolbar and the canvas. */
+/** The right panel. It hands the layout on screen to the toolbar, the canvas and the status. */
 export function PreviewPanel() {
-  const layout = useSheetLayout()
+  const { layout, pending, optimizing } = useSheetLayout()
   const images = useAppStore((state) => state.images)
 
   return (
@@ -15,15 +14,7 @@ export function PreviewPanel() {
       <PreviewToolbar sheetCount={layout.sheets.length} sheetWidth={layout.sheetWidth} />
       <div className="relative min-h-0 flex-1">
         <SheetCanvas layout={layout} images={images} />
-        {layout.sheets.length > 0 && (
-          <Badge
-            variant="outline"
-            className="pointer-events-none absolute bottom-3 left-3 z-20 bg-card/85 text-muted-foreground backdrop-blur-sm"
-          >
-            <FlaskConicalIcon />
-            Placeholder layout
-          </Badge>
-        )}
+        <PackingStatus layout={layout} searching={pending || optimizing} />
       </div>
     </section>
   )

@@ -1,4 +1,4 @@
-import { LIMITS, type PrintOptions } from './print-options'
+import { LIMITS, type LayoutOptions } from './print-options'
 import type { SheetGeometry } from './sheet'
 
 const MM_PER_INCH = 25.4
@@ -12,7 +12,7 @@ interface PixelSize {
 }
 
 /** Millimetres printed per source pixel when an image's size slider sits at 100%. */
-function baseMmPerPixel(size: PixelSize, options: PrintOptions): number {
+function baseMmPerPixel(size: PixelSize, options: LayoutOptions): number {
   switch (options.baseMode) {
     case 'width':
       return options.baseLength / size.width
@@ -25,14 +25,23 @@ function baseMmPerPixel(size: PixelSize, options: PrintOptions): number {
   }
 }
 
+/**
+ * The packer rounds the sheet, the margin and every photo to whole micrometres, each by up to half
+ * of one. A photo is kept this much smaller than the usable area so that rounding can never turn a
+ * size that fits into one the packer cannot place.
+ */
+const PACKER_SLACK_MM = 0.003
+
 /** The largest percentage at which the image still fits inside the usable sheet area. */
-function getMaxPercent(size: PixelSize, options: PrintOptions, geometry: SheetGeometry) {
+function getMaxPercent(size: PixelSize, options: LayoutOptions, geometry: SheetGeometry) {
   const scale = baseMmPerPixel(size, options)
   const width = size.width * scale
   const height = size.height * scale
-  let fit = Math.min(geometry.usableWidth / width, geometry.usableHeight / height)
+  const usableWidth = geometry.usableWidth - PACKER_SLACK_MM
+  const usableHeight = geometry.usableHeight - PACKER_SLACK_MM
+  let fit = Math.min(usableWidth / width, usableHeight / height)
   if (options.allowRotation) {
-    fit = Math.max(fit, Math.min(geometry.usableWidth / height, geometry.usableHeight / width))
+    fit = Math.max(fit, Math.min(usableWidth / height, usableHeight / width))
   }
   return Math.floor(fit * 1e4) / 100
 }
@@ -53,7 +62,7 @@ export interface PrintInfo {
 /** Everything the UI and the layout need to know about how large one image prints. */
 export function getPrintInfo(
   image: PixelSize & { percent: number },
-  options: PrintOptions,
+  options: LayoutOptions,
   geometry: SheetGeometry,
 ): PrintInfo {
   const fitPercent = getMaxPercent(image, options, geometry)
@@ -78,7 +87,7 @@ export function getPrintInfo(
  * Sizes every image so that all of them print at the same width: the average of their
  * widths at 100%. Returns the target width and the matching percentages in input order.
  */
-export function matchWidths(images: readonly PixelSize[], options: PrintOptions) {
+export function matchWidths(images: readonly PixelSize[], options: LayoutOptions) {
   if (images.length === 0) return null
   const widths = images.map((image) => image.width * baseMmPerPixel(image, options))
   const target = widths.reduce((sum, w) => sum + w, 0) / widths.length

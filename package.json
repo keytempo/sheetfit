@@ -14,7 +14,16 @@
     "typecheck": "tsc -b",
     "lint": "eslint . --max-warnings 0",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "bench": "vitest bench --run",
+    "bench:report": "vitest run --config vitest.report.config.ts",
+    "e2e": "npm run e2e:layout && npm run e2e:controls && npm run e2e:pdf && npm run e2e:a11y",
+    "e2e:layout": "node e2e/layout.mjs",
+    "e2e:controls": "node e2e/controls.mjs",
+    "e2e:pdf": "node e2e/pdf-export.mjs",
+    "e2e:a11y": "node e2e/a11y.mjs",
+    "e2e:perf": "node e2e/responsiveness.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -44,14 +53,17 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
+    "axe-core": "^4.14.0",
     "eslint": "^10.13.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.7",
     "globals": "^17.13.0",
+    "playwright": "1.56.0",
     "prettier": "^3.9.10",
     "tailwindcss": "^4.3.3",
     "typescript": "~6.0",
     "typescript-eslint": "^8.72.0",
-    "vite": "^8.3.5"
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
   }
 }

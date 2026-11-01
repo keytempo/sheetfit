@@ -1,4 +1,4 @@
-import { CircleAlertIcon, CircleCheckIcon, FileTextIcon } from 'lucide-react'
+import { CircleAlertIcon, CircleCheckIcon, FileTextIcon, TriangleAlertIcon } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
@@ -11,11 +11,11 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Progress } from '@/components/ui/progress'
-import type { ExportResult } from '@/lib/export-types'
-import { formatFileSize } from '@/lib/format'
+import { downloadBlob } from '@/lib/download'
+import type { ExportInput, ExportResult } from '@/lib/export-types'
+import { formatFileSize, pluralize } from '@/lib/format'
 import { fadeSlide } from '@/lib/motion'
-import { exportPdf } from '@/placeholders'
-import { snapshotExportInput } from '@/store/derived'
+import { exportPdf } from '@/pdf/client'
 
 type RunState =
   | { status: 'running'; fraction: number; label: string }
@@ -24,7 +24,7 @@ type RunState =
 
 const STARTING: RunState = { status: 'running', fraction: 0, label: 'Starting' }
 
-const NOTICE = 'UI preview only, no file produced.'
+const NOTICE = 'Each photo is embedded once and never recompressed with any loss.'
 
 function Step({ children }: { children: ReactNode }) {
   return (
@@ -34,13 +34,24 @@ function Step({ children }: { children: ReactNode }) {
   )
 }
 
-/** Runs one export and shows its progress. It exists only while the dialog is open. */
-function ExportRun({ onClose }: { onClose: () => void }) {
-  const [input] = useState(snapshotExportInput)
+/**
+ * Runs one export of the snapshot taken when Download PDF was pressed and shows its progress. Work
+ * stops the moment the dialog closes, so Cancel really cancels and no file is saved.
+ */
+function ExportRun({
+  input,
+  open,
+  onClose,
+}: {
+  input: ExportInput
+  open: boolean
+  onClose: () => void
+}) {
   const [attempt, setAttempt] = useState(0)
   const [state, setState] = useState<RunState>(STARTING)
 
   useEffect(() => {
+    if (!open) return
     const controller = new AbortController()
     exportPdf(
       input,
@@ -49,7 +60,11 @@ function ExportRun({ onClose }: { onClose: () => void }) {
       },
       controller.signal,
     )
-      .then((result) => setState({ status: 'success', result }))
+      .then((result) => {
+        if (controller.signal.aborted) return
+        downloadBlob(result.blob, result.filename)
+        setState({ status: 'success', result })
+      })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return
         setState({
@@ -58,12 +73,14 @@ function ExportRun({ onClose }: { onClose: () => void }) {
         })
       })
     return () => controller.abort()
-  }, [input, attempt])
+  }, [input, open, attempt])
 
   const retry = () => {
     setState(STARTING)
     setAttempt((count) => count + 1)
   }
+
+  const omitted = input.layout.unplaceable.length
 
   return (
     <AnimatePresence mode="wait" initial={false}>
@@ -95,18 +112,34 @@ function ExportRun({ onClose }: { onClose: () => void }) {
               <CircleCheckIcon className="size-5" />
               <DialogTitle>Your PDF is ready</DialogTitle>
             </div>
-            <DialogDescription>{NOTICE}</DialogDescription>
+            <DialogDescription>If the download didn’t start, use Download again.</DialogDescription>
           </DialogHeader>
           <div className="flex items-center gap-3 rounded-lg border bg-muted/50 p-3">
             <FileTextIcon className="size-8 shrink-0 text-muted-foreground" />
             <div className="min-w-0">
               <p className="truncate font-mono text-sm font-medium">{state.result.filename}</p>
               <p className="font-mono text-xs text-muted-foreground tabular-nums">
-                {formatFileSize(state.result.sizeBytes)}
+                {formatFileSize(state.result.blob.size)}
               </p>
             </div>
           </div>
+          {omitted > 0 && (
+            <p
+              role="status"
+              className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/20 p-3 text-sm text-warning-foreground"
+            >
+              <TriangleAlertIcon className="mt-0.5 size-4 shrink-0" />
+              {pluralize(omitted, 'copy', 'copies')} did not fit on the sheet and{' '}
+              {omitted === 1 ? 'was' : 'were'} left out of the PDF.
+            </p>
+          )}
           <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => downloadBlob(state.result.blob, state.result.filename)}
+            >
+              Download again
+            </Button>
             <Button onClick={onClose}>Done</Button>
           </DialogFooter>
         </Step>
@@ -139,17 +172,26 @@ function ExportRun({ onClose }: { onClose: () => void }) {
   )
 }
 
+/**
+ * One export. The input is kept while the dialog fades out, and each press of Download PDF gets
+ * its own `id`, so a new run never starts from the previous run's result.
+ */
+export interface ExportState {
+  id: number
+  input: ExportInput
+  open: boolean
+}
+
 export function ExportDialog({
+  id,
+  input,
   open,
   onOpenChange,
-}: {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-}) {
+}: ExportState & { onOpenChange: (open: boolean) => void }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
-        <ExportRun onClose={() => onOpenChange(false)} />
+        <ExportRun key={id} input={input} open={open} onClose={() => onOpenChange(false)} />
       </DialogContent>
     </Dialog>
   )

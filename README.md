@@ -9,29 +9,27 @@ Everything runs in the browser. Photos are read into memory as object URLs and a
 
 ## Roadmap
 
-| Chunk | Scope                                                                            | Status  |
-| ----- | -------------------------------------------------------------------------------- | ------- |
-| 1     | The complete UI, UX and responsiveness. Packing and PDF export are placeholders. | **Now** |
-| 2     | The packing algorithm (replaces the placeholder layout)                          | Planned |
-| 3     | Presets (a menu in the header)                                                   | Planned |
-| 4     | In-app manual (a help button in the header)                                      | Planned |
+| Chunk | Scope                                                                        | Status   |
+| ----- | ---------------------------------------------------------------------------- | -------- |
+| 1     | UI: the complete UI, UX and responsiveness                                   | **Done** |
+| 2     | Packing algorithm: a standalone, tested engine in `src/packing`              | **Done** |
+| 3     | Integration of the packer, real PDF export, and a verification of everything | **Done** |
+| 4     | Presets (a menu in the header)                                               | Planned  |
+| 5     | In-app manual (a help button in the header)                                  | Planned  |
 
-Real PDF export arrives together with the packer in chunk 2.
+## How it works
 
-### What is a placeholder in chunk 1
-
-Only two things are stand-ins, and both live in `src/placeholders/`:
-
-- **Layout**: `layout.ts` is a trivial shelf layout (left to right, new row, new sheet). It does no
-  optimisation and ignores the "Ordering" option. The preview shows a **Placeholder layout** badge.
-- **Export**: `export.ts` simulates about two seconds of progress and produces no file. The dialog
-  says "UI preview only, no file produced". Every third attempt fails on purpose so the error and
-  retry states can be reviewed.
-
-The UI imports them only through `src/placeholders/index.ts`. To swap in the real thing, implement
-`LayoutFunction` (`src/lib/layout-types.ts`) or `ExportFunction` (`src/lib/export-types.ts`) and
-change the export in that one file. `useSheetLayout()` in `src/store/derived.ts` is the single place
-that calls the layout; it is synchronous today and is where a worker-based packer would be awaited.
+- **Layout.** Every change to the photos or the options that can alter a layout sends the sizes to a
+  Web Worker, which packs them (`src/packing`), answers with a first layout almost at once, and then
+  keeps improving it for up to three seconds. The preview shows each better layout as it arrives and
+  says so: "Optimizing…", "Optimal" (proven to use the fewest sheets possible) or "Best found". If the
+  worker cannot run, the page packs on its own thread. Design, algorithms, benchmarks and how the app
+  uses it: [`docs/packing.md`](docs/packing.md).
+- **PDF.** Download PDF writes the layout that is on screen as a PDF in another Web Worker: one page
+  per sheet, each photo stored once however many copies there are, JPEGs byte for byte, everything
+  else without loss. Structure, image rules and limits: [`docs/pdf-export.md`](docs/pdf-export.md).
+- **Verification.** Unit tests, benchmarks and browser checks (layout, every control, PDF validity
+  with external tools, accessibility, responsiveness): [`docs/testing.md`](docs/testing.md).
 
 ## Local development
 
@@ -45,6 +43,10 @@ npm run preview      # serve the production build locally
 npm run typecheck    # tsc, strict mode
 npm run lint         # ESLint, zero warnings allowed
 npm run format       # Prettier (format:check only verifies)
+npm test             # unit tests (the packer, the PDF writer, the app's maths)
+npm run bench        # first-result timings of the packer
+npm run bench:report # the packer's evidence tables
+npm run build && npm run e2e   # browser checks; see docs/testing.md for what they need
 ```
 
 ## Deploying to Cloudflare Pages
@@ -76,6 +78,10 @@ libraries are the ones the brief allows, each used for one job:
 - `@fontsource-variable/*`: self-hosted fonts (Bricolage Grotesque, Instrument Sans, JetBrains
   Mono). Nothing is requested from a CDN at runtime.
 
+The packer and the PDF writer are written for this project and have no dependency at all. For
+checking the app, `vitest` runs the unit tests, and `playwright` and `axe-core` drive the browser
+checks; all three are development dependencies and are not part of the build.
+
 ## Project structure
 
 ```
@@ -87,19 +93,24 @@ src/
     images/          Window drop overlay, image list, rows, bulk actions
     print-options/   The Print options slide-over, its sections and controls
     preview/         Sheet preview, pieces, toolbar, hover stats, zoom
-    export/          Export dialog shell
+    export/          Export dialog
   lib/               Units, sizing maths, sheet geometry, contracts, motion tokens, helpers
-  placeholders/      The marked stand-ins for packing and PDF export
-  store/             The zustand store (images, options and UI slices) and derived hooks
+  packing/           The packing engine, its worker, tests and benchmarks
+  pdf/               The PDF writer, its worker, and a test-only PDF reader
+  store/             The zustand store (images, options and UI slices), the packing hook
+docs/                Developer documentation: packing, PDF export, testing
+e2e/                 Browser checks and their fixtures (run against the production build)
 ```
 
 ### State and persistence
 
 One store holds the image list, the print options and UI state. Print options and panel sizes persist
 in `localStorage` (`sheetfit:v1`); the theme persists under `sheetfit:theme`. The image list never
-persists. Every length is stored in millimetres whatever unit is displayed. Anything that can be
-computed from state (the layout, printed sizes, the per-image size limit, DPI) is computed when it is
-read and never stored.
+persists, and neither does a layout. Saved settings are checked when they are read back, so a stale or
+edited entry falls back to valid values. Every length is stored in millimetres whatever unit is
+displayed. Printed sizes, the per-image size limit and DPI are computed when they are read and never
+stored; the layout is the packer's answer for the current photos and options, held in memory by
+`LayoutProvider` and replaced as the packer finds better ones.
 
 ### Where the header grows
 
@@ -109,6 +120,9 @@ menu.
 
 ## Browser support
 
-Current evergreen browsers. The preview relies on CSS container query units (Chrome 105, Safari 16,
-Firefox 110) so the sheet re-fits while the divider is dragged, and image decoding uses
-`createImageBitmap` with EXIF orientation.
+Current evergreen browsers: Chrome and Edge 105 or newer, Firefox 114 or newer, Safari 16.4 or
+newer. The preview relies on CSS container query units so the sheet re-fits while the divider is
+dragged; packing and export use module Web Workers, and the export uses `CompressionStream`,
+`OffscreenCanvas` and `createImageBitmap` (with EXIF orientation) inside a worker. These versions
+are the ones where each of those features first shipped; **only Chrome has been tested**. Without
+module workers the page still packs on its own thread, but cannot export.

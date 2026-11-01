@@ -4,6 +4,11 @@
 @import '@fontsource-variable/bricolage-grotesque';
 @import '@fontsource-variable/jetbrains-mono';
 
+/* These folders hold plain TypeScript and test scripts with ordinary words such as "table" and
+   "filter" in them, and no class names, so the scanner must not read them. */
+@source not '../e2e';
+@source not './pdf';
+
 @custom-variant dark (&:is(.dark *));
 
 /*

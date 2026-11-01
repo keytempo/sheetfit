@@ -1,4 +1,4 @@
-import { LIMITS, type Orientation, type PrintOptions, type SheetSizeId } from './print-options'
+import { LIMITS, type LayoutOptions, type Orientation, type SheetSizeId } from './print-options'
 
 export type ResolvedOrientation = 'portrait' | 'landscape'
 
@@ -26,20 +26,24 @@ export const SHEET_PRESETS: readonly SheetPreset[] = [
 /** The smallest usable width and height the margin is ever allowed to leave. */
 const MIN_USABLE_SIDE = 10
 
-/** Automatic currently resolves to portrait; the packer will take over this decision later. */
+/**
+ * The orientation the photo size limit is measured against. Automatic is decided later, by the
+ * packer, which tries both; a photo is never allowed to print larger than the portrait sheet holds,
+ * so every size shown fits in whichever orientation the packer picks.
+ */
 export function resolveOrientation(orientation: Orientation): ResolvedOrientation {
   return orientation === 'landscape' ? 'landscape' : 'portrait'
 }
 
 /** The sheet as it comes out of the printer tray: the shorter side is always the width. */
-export function getPortraitSize(options: PrintOptions): SheetSize {
+export function getPortraitSize(options: LayoutOptions): SheetSize {
   const preset = SHEET_PRESETS.find((p) => p.id === options.sheetSize)
   const a = preset?.width ?? options.customWidth
   const b = preset?.height ?? options.customHeight
   return { width: Math.min(a, b), height: Math.max(a, b) }
 }
 
-export function getMaxMargin(options: PrintOptions) {
+export function getMaxMargin(options: LayoutOptions) {
   const { width } = getPortraitSize(options)
   return Math.max(0, Math.min(LIMITS.margin.max, (width - MIN_USABLE_SIDE) / 2))
 }
@@ -59,7 +63,7 @@ export interface SheetGeometry {
  * The single place where sheet size, orientation and margin are combined.
  * The stored margin is clamped here, so shrinking the sheet can never leave a negative usable area.
  */
-export function getSheetGeometry(options: PrintOptions): SheetGeometry {
+export function getSheetGeometry(options: LayoutOptions): SheetGeometry {
   const portrait = getPortraitSize(options)
   const orientation = resolveOrientation(options.orientation)
   const landscape = orientation === 'landscape'

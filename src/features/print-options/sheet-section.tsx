@@ -18,7 +18,7 @@ import { useOption } from './use-option'
 const ORIENTATION_HELP: Record<Orientation, string> = {
   portrait: 'The sheet is taller than it is wide.',
   landscape: 'The sheet is wider than it is tall.',
-  auto: 'Will pick whichever orientation wastes less paper. For now it uses portrait.',
+  auto: 'Uses portrait or landscape, whichever needs fewer sheets.',
 }
 
 export function SheetSection() {

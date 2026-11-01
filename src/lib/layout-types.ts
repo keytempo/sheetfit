@@ -2,8 +2,7 @@ import type { Orientation, Ordering } from './print-options'
 import type { ResolvedOrientation, SheetSize } from './sheet'
 
 /**
- * The contract between the UI and whatever places pieces on sheets.
- * The placeholder shelf layout and the future packer implement the same `LayoutFunction`.
+ * The contract between the UI and the packer in src/packing.
  * All lengths are millimetres and all coordinates are measured from the sheet's top-left corner.
  */
 
@@ -59,12 +58,49 @@ export interface PlacedSheet {
   stats: SheetStats
 }
 
+/** Why a piece could not be placed on any sheet. */
+export type UnplaceableReason =
+  /** The sheet leaves no usable area once the margin is taken off. */
+  | 'no-usable-area'
+  /** The piece is larger than the usable area, in every allowed orientation. */
+  | 'too-large'
+  /** The piece has no positive, finite size. */
+  | 'invalid-size'
+
+export interface UnplaceablePiece {
+  piece: PieceSpec
+  reason: UnplaceableReason
+}
+
+/**
+ * `optimal`: the number of sheets is proven to be the fewest possible.
+ * `best-found`: the best layout the packer found; a better one may exist.
+ */
+export type LayoutStatus = 'optimal' | 'best-found'
+
+/** Overall figures. They are sums over the sheets, never averages of percentages. */
+export interface LayoutTotals {
+  sheetCount: number
+  pieceCount: number
+  usableArea: number
+  usedArea: number
+  wastedArea: number
+  /** Share of all the usable area that is covered, 0–100. */
+  fillPercent: number
+  /** The same share over every sheet except the last, 0–100. 0 when there is one sheet or none. */
+  fillPercentExceptLast: number
+}
+
 export interface LayoutResult {
   orientation: ResolvedOrientation
   sheetWidth: number
   sheetHeight: number
   margin: number
   sheets: readonly PlacedSheet[]
+  status: LayoutStatus
+  /** The proven lower bound on the number of sheets. */
+  lowerBound: number
+  /** Pieces that are on no sheet. Every piece is either on a sheet or listed here. */
+  unplaceable: readonly UnplaceablePiece[]
+  totals: LayoutTotals
 }
-
-export type LayoutFunction = (input: LayoutInput) => LayoutResult

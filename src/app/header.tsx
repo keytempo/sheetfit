@@ -2,18 +2,19 @@ import { DownloadIcon, ImagePlusIcon, SlidersHorizontalIcon } from 'lucide-react
 import { useState } from 'react'
 import { LogoMark } from '@/components/logo'
 import { Button } from '@/components/ui/button'
-import { ExportDialog } from '@/features/export/export-dialog'
+import { ExportDialog, type ExportState } from '@/features/export/export-dialog'
 import { AddImagesButton } from '@/features/images/add-images-button'
 import { PRINT_OPTIONS_BUTTON_ID } from '@/lib/dom-ids'
 import { useAppStore } from '@/store'
-import { useTotalPieces } from '@/store/derived'
+import { snapshotExportInput } from '@/store/derived'
+import { useSheetLayout } from '@/store/layout-context'
 import { ThemeMenu } from './theme-menu'
 
 export function Header() {
   const printOptionsOpen = useAppStore((state) => state.printOptionsOpen)
   const setPrintOptionsOpen = useAppStore((state) => state.setPrintOptionsOpen)
-  const totalPieces = useTotalPieces()
-  const [exportOpen, setExportOpen] = useState(false)
+  const { layout, pending } = useSheetLayout()
+  const [exportState, setExportState] = useState<ExportState | null>(null)
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-2 border-b bg-card px-3 pt-[env(safe-area-inset-top)] sm:px-4">
@@ -45,15 +46,26 @@ export function Header() {
         <ThemeMenu />
         <Button
           aria-label="Download PDF"
-          disabled={totalPieces === 0}
-          onClick={() => setExportOpen(true)}
+          disabled={pending || layout.sheets.length === 0}
+          onClick={() =>
+            setExportState({
+              id: (exportState?.id ?? 0) + 1,
+              input: snapshotExportInput(layout),
+              open: true,
+            })
+          }
         >
           <DownloadIcon />
           <span className="hidden sm:inline">Download PDF</span>
         </Button>
       </nav>
 
-      <ExportDialog open={exportOpen} onOpenChange={setExportOpen} />
+      {exportState && (
+        <ExportDialog
+          {...exportState}
+          onOpenChange={(open) => setExportState({ ...exportState, open })}
+        />
+      )}
     </header>
   )
 }

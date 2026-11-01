@@ -25,7 +25,8 @@ export interface ExportProgress {
 
 export interface ExportResult {
   filename: string
-  sizeBytes: number
+  /** The finished PDF. Its size is the file size. */
+  blob: Blob
 }
 
 /** Rejects with an `AbortError` when `signal` is aborted. */
