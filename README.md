@@ -14,8 +14,9 @@ Everything runs in the browser. Photos are read into memory as object URLs and a
 | 1     | UI: the complete UI, UX and responsiveness                                   | **Done** |
 | 2     | Packing algorithm: a standalone, tested engine in `src/packing`              | **Done** |
 | 3     | Integration of the packer, real PDF export, and a verification of everything | **Done** |
-| 4     | Presets (a menu in the header)                                               | Planned  |
-| 5     | In-app manual (a help button in the header)                                  | Planned  |
+| 4     | Presets: named snapshots of the print settings, in a menu in the header      | **Done** |
+| 5     | Persistence of work and batch import                                         | Planned  |
+| 6     | In-app manual (a help button in the header)                                  | Planned  |
 
 ## How it works
 
@@ -28,8 +29,15 @@ Everything runs in the browser. Photos are read into memory as object URLs and a
 - **PDF.** Download PDF writes the layout that is on screen as a PDF in another Web Worker: one page
   per sheet, each photo stored once however many copies there are, JPEGs byte for byte, everything
   else without loss. Structure, image rules and limits: [`docs/pdf-export.md`](docs/pdf-export.md).
+- **Presets.** The Presets menu in the header saves the current print settings under a name and
+  applies, updates, renames, duplicates, deletes (with Undo), exports and imports them. A preset is
+  the sheet, base size, spacing and layout options only: never the photos, their copies or sizes, the
+  units or the preview switches. They live under their own key, apart from the last-used options.
+  Everything read from storage or from a file is validated first. Design, the schema, what is
+  saved and why, and the rules for storage failures, several tabs and imports:
+  [`docs/presets.md`](docs/presets.md).
 - **Verification.** Unit tests, benchmarks and browser checks (layout, every control, PDF validity
-  with external tools, accessibility, responsiveness): [`docs/testing.md`](docs/testing.md).
+  with external tools, accessibility, responsiveness, presets): [`docs/testing.md`](docs/testing.md).
 
 ## Local development
 
@@ -94,18 +102,21 @@ src/
     print-options/   The Print options slide-over, its sections and controls
     preview/         Sheet preview, pieces, toolbar, hover stats, zoom
     export/          Export dialog
+    presets/         The presets menu, its dialogs, actions and wording
   lib/               Units, sizing maths, sheet geometry, contracts, motion tokens, helpers
+    presets/         The presets data model: validation, storage, import and export
   packing/           The packing engine, its worker, tests and benchmarks
   pdf/               The PDF writer, its worker, and a test-only PDF reader
-  store/             The zustand store (images, options and UI slices), the packing hook
-docs/                Developer documentation: packing, PDF export, testing
+  store/             The zustand store (images, options and UI slices), the packing hook, the presets
+docs/                Developer documentation: packing, PDF export, presets, testing
 e2e/                 Browser checks and their fixtures (run against the production build)
 ```
 
 ### State and persistence
 
 One store holds the image list, the print options and UI state. Print options and panel sizes persist
-in `localStorage` (`sheetfit:v1`); the theme persists under `sheetfit:theme`. The image list never
+in `localStorage` (`sheetfit:v1`); the theme persists under `sheetfit:theme`, and the presets under `sheetfit:presets`, which never reads or
+writes the print options. The image list never
 persists, and neither does a layout. Saved settings are checked when they are read back, so a stale or
 edited entry falls back to valid values. Every length is stored in millimetres whatever unit is
 displayed. Printed sizes, the per-image size limit and DPI are computed when they are read and never
@@ -114,9 +125,8 @@ stored; the layout is the packer's answer for the current photos and options, he
 
 ### Where the header grows
 
-The header leaves room for the later chunks: the empty space between the brand and the actions is
-where the presets menu goes, and the help button goes between the Print options button and the theme
-menu.
+The Presets menu now sits in the header, right after the brand. The help button for the in-app manual
+goes between the Print options button and the theme menu.
 
 ## Browser support
 

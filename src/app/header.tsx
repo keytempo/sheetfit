@@ -4,6 +4,7 @@ import { LogoMark } from '@/components/logo'
 import { Button } from '@/components/ui/button'
 import { ExportDialog, type ExportState } from '@/features/export/export-dialog'
 import { AddImagesButton } from '@/features/images/add-images-button'
+import { PresetsMenu } from '@/features/presets/presets-menu'
 import { PRINT_OPTIONS_BUTTON_ID } from '@/lib/dom-ids'
 import { useAppStore } from '@/store'
 import { snapshotExportInput } from '@/store/derived'
@@ -20,10 +21,12 @@ export function Header() {
     <header className="flex h-14 shrink-0 items-center gap-2 border-b bg-card px-3 pt-[env(safe-area-inset-top)] sm:px-4">
       <div className="flex items-center gap-2.5">
         <LogoMark className="size-7 shrink-0" />
-        <h1 className="font-display text-lg font-bold tracking-tight">Sheetfit</h1>
+        <h1 className="font-display text-lg font-bold tracking-tight max-[379px]:sr-only">
+          Sheetfit
+        </h1>
       </div>
 
-      {/* The open space between the brand and the actions has room for the presets menu. */}
+      <PresetsMenu />
       <div className="min-w-0 flex-1" />
 
       <nav aria-label="Actions" className="flex items-center gap-1.5">

@@ -8,6 +8,7 @@
    "filter" in them, and no class names, so the scanner must not read them. */
 @source not '../e2e';
 @source not './pdf';
+@source not './lib/presets';
 
 @custom-variant dark (&:is(.dark *));
 

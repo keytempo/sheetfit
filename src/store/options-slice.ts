@@ -7,5 +7,6 @@ type Slice = StateCreator<AppState, [['zustand/persist', unknown]], [], OptionsS
 export const createOptionsSlice: Slice = (set) => ({
   options: DEFAULT_PRINT_OPTIONS,
   setOption: (key, value) => set((state) => ({ options: { ...state.options, [key]: value } })),
+  applyOptions: (changes) => set((state) => ({ options: { ...state.options, ...changes } })),
   resetOptions: () => set({ options: DEFAULT_PRINT_OPTIONS }),
 })

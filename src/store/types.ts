@@ -52,6 +52,8 @@ export interface ImagesSlice {
 export interface OptionsSlice {
   options: PrintOptions
   setOption: <K extends keyof PrintOptions>(key: K, value: PrintOptions[K]) => void
+  /** Changes several options in one update, so everything that reads them reacts once. */
+  applyOptions: (changes: Partial<PrintOptions>) => void
   resetOptions: () => void
 }
 
