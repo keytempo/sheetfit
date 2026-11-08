@@ -1088,21 +1088,31 @@ let page
     },
   )
   await control(
-    'Options persist across a reload; images and layouts do not',
-    'after reload the options are back, the list is empty',
+    'Options and the photo list persist across a reload; selection and layouts do not',
+    'after reload the options and the same photos (order, copies, sizes) are back, nothing is selected',
     async () => {
       await openOptions(page)
       await page.getByRole('radio', { name: 'Landscape' }).click()
       await page.getByRole('radio', { name: 'cm' }).click()
       await page.waitForTimeout(400)
+      const before = await read(page)
+      ok(before.images.length > 0, 'the scene has photos to persist')
       await page.reload()
-      await page.waitForTimeout(900)
+      await page.waitForFunction(
+        (n) => document.querySelectorAll('[data-image-row]').length === n,
+        before.images.length,
+        { timeout: 20000 },
+      )
       const state = await read(page)
       ok(
         state.options.orientation === 'landscape' && state.options.unit === 'cm',
         JSON.stringify(state.options),
       )
-      ok(state.images.length === 0, 'images persisted')
+      ok(
+        JSON.stringify(state.images) === JSON.stringify(before.images),
+        'the restored photos differ from the ones before the reload',
+      )
+      ok(state.selected === null, 'selection was restored')
     },
   )
   await app.close()

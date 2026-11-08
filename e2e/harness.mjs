@@ -66,9 +66,11 @@ export async function open({
   storage,
   init,
   dev = false,
+  channel,
 } = {}) {
   const app = dev ? await serveDev() : await serve()
-  const browser = await chromium.launch()
+  // `channel: 'chromium'` runs the full browser, which has the built-in PDF viewer the headless shell lacks.
+  const browser = await chromium.launch(channel ? { channel } : {})
   const context = await browser.newContext({
     viewport: { width, height },
     colorScheme,
@@ -112,36 +114,55 @@ export async function addFiles(page, names) {
   return before
 }
 
-/** Makes photos inside the page with a canvas, so no image files have to be stored for big tests. */
-export async function addGenerated(page, specs) {
-  await page.evaluate(async (items) => {
-    const files = []
-    for (const [index, spec] of items.entries()) {
-      const {
-        width,
-        height,
-        type = 'image/jpeg',
-        quality = 0.7,
-        name = `generated-${index}.jpg`,
-      } = spec
-      const canvas = new OffscreenCanvas(width, height)
-      const context = canvas.getContext('2d')
-      const gradient = context.createLinearGradient(0, 0, width, height)
-      gradient.addColorStop(0, `hsl(${(index * 47) % 360},80%,50%)`)
-      gradient.addColorStop(1, `hsl(${(index * 47 + 120) % 360},70%,40%)`)
-      context.fillStyle = gradient
-      context.fillRect(0, 0, width, height)
-      context.fillStyle = `hsl(${(index * 91) % 360},90%,60%)`
-      context.fillRect(width * 0.1, height * 0.2, width * 0.3, height * 0.15)
-      const blob = await canvas.convertToBlob({ type, quality })
-      files.push(new File([blob], name, { type }))
-    }
+/**
+ * Makes photos inside the page with a canvas, so no image files have to be stored for big tests,
+ * and keeps them under `key` without adding them. Drawing them is slow work that a measurement of
+ * the app's own import must not include; `addPrepared` then hands them over in one step.
+ */
+export async function prepareGenerated(page, specs, key) {
+  await page.evaluate(
+    async ({ items, key }) => {
+      const files = []
+      for (const [index, spec] of items.entries()) {
+        const {
+          width,
+          height,
+          type = 'image/jpeg',
+          quality = 0.7,
+          name = `generated-${index}.jpg`,
+        } = spec
+        const canvas = new OffscreenCanvas(width, height)
+        const context = canvas.getContext('2d')
+        const gradient = context.createLinearGradient(0, 0, width, height)
+        gradient.addColorStop(0, `hsl(${(index * 47) % 360},80%,50%)`)
+        gradient.addColorStop(1, `hsl(${(index * 47 + 120) % 360},70%,40%)`)
+        context.fillStyle = gradient
+        context.fillRect(0, 0, width, height)
+        context.fillStyle = `hsl(${(index * 91) % 360},90%,60%)`
+        context.fillRect(width * 0.1, height * 0.2, width * 0.3, height * 0.15)
+        const blob = await canvas.convertToBlob({ type, quality })
+        files.push(new File([blob], name, { type }))
+      }
+      window.__prepared = { ...window.__prepared, [key]: files }
+    },
+    { items: specs, key },
+  )
+}
+
+/** Gives the app the photos prepared under `key`, through the file input, in one change event. */
+export async function addPrepared(page, key) {
+  await page.evaluate((key) => {
     const transfer = new DataTransfer()
-    for (const file of files) transfer.items.add(file)
+    for (const file of window.__prepared[key]) transfer.items.add(file)
     const input = document.querySelector('input[type=file]')
     input.files = transfer.files
     input.dispatchEvent(new Event('change', { bubbles: true }))
-  }, specs)
+  }, key)
+}
+
+export async function addGenerated(page, specs) {
+  await prepareGenerated(page, specs, 'now')
+  await addPrepared(page, 'now')
 }
 
 export async function waitForImages(page, count, timeout = 60000) {
@@ -182,7 +203,7 @@ export async function waitForSettled(page, timeout = 20000) {
   await page.waitForFunction(
     () => {
       const badge = [...document.querySelectorAll('[role=status]')].find((el) =>
-        /Optimal|Best found|Optimizing/.test(el.textContent ?? ''),
+        /Optimal|Best found|Time limit reached|Optimizing/.test(el.textContent ?? ''),
       )
       return badge !== undefined && !/Optimizing/.test(badge.textContent ?? '')
     },
@@ -246,11 +267,23 @@ export function watchWorkers(delay = 0) {
         if (!isPacking) return
         const post = this.postMessage.bind(this)
         this.postMessage = (message, ...rest) => {
-          window.__packing.sent.push({ type: message.type, id: message.id })
+          window.__packing.sent.push({
+            type: message.type,
+            id: message.id,
+            from: message.from,
+            budgetMs: message.limits?.budgetMs,
+            pieces: message.input?.pieces?.length,
+          })
           return post(message, ...rest)
         }
         this.addEventListener('error', () => window.__packing.errors.push('worker error'))
-        const record = (event) => window.__packing.received.push({ type: event.data?.type, id: event.data?.id, layout: event.data?.layout })
+        const record = (event) =>
+          window.__packing.received.push({
+            type: event.data?.type,
+            id: event.data?.id,
+            layout: event.data?.layout,
+            stopped: event.data?.summary?.stopped,
+          })
         this.addEventListener('message', record, true)
         ${
           delay > 0
@@ -265,4 +298,61 @@ export function watchWorkers(delay = 0) {
       }
     }
   })()`
+}
+
+/**
+ * Counts what React does: how many commits it makes and how many function components it renders
+ * in them, through the hook React DevTools would use. Install it with `open({ init: watchRenders() })`
+ * and read `window.__renders`. It walks only the parts of the tree that changed, as DevTools does, so
+ * a component that bailed out is not counted.
+ */
+export function watchRenders() {
+  return `(() => {
+    const state = (window.__renders = { commits: 0, renders: 0, perCommit: [] })
+    const FUNCTION_TAGS = [0, 11, 15]
+    const PERFORMED_WORK = 1
+    const visit = (next, prev) => {
+      if (FUNCTION_TAGS.includes(next.tag) && (prev === null || (next.flags & PERFORMED_WORK) !== 0))
+        state.renders++
+      if (prev !== null && next.child === prev.child) return
+      for (let child = next.child; child; child = child.sibling) visit(child, child.alternate)
+    }
+    window.__REACT_DEVTOOLS_GLOBAL_HOOK__ = {
+      supportsFiber: true,
+      renderers: new Map(),
+      inject(renderer) {
+        this.renderers.set(this.renderers.size + 1, renderer)
+        return this.renderers.size
+      },
+      onCommitFiberRoot(_id, root) {
+        state.commits++
+        const before = state.renders
+        visit(root.current, root.current.alternate)
+        state.perCommit.push(state.renders - before)
+      },
+      onCommitFiberUnmount() {},
+      onPostCommitFiberRoot() {},
+      checkDCE() {},
+    }
+  })()`
+}
+
+/**
+ * Waits until nothing on the page is mid-way through a fade, a scale or a colour transition. axe reads
+ * the colours the browser is showing at that instant, so a button half-way to full opacity or a
+ * dialog still fading in reads as low contrast. Endless animations (the spinner) do not count.
+ */
+export async function waitForQuiet(page, timeout = 5000) {
+  await page.waitForFunction(
+    () =>
+      document
+        .getAnimations()
+        .every(
+          (animation) =>
+            animation.playState !== 'running' ||
+            animation.effect?.getComputedTiming().iterations === Infinity,
+        ),
+    null,
+    { timeout },
+  )
 }

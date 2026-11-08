@@ -60,16 +60,20 @@ const optionsJson = (options) =>
     version: 1,
   })
 
-/** Presses Download PDF, waits for the file, and returns what the dialog said. */
+/**
+ * Presses Download PDF in the header, waits for the dialog to say the PDF is ready, and then presses
+ * Download PDF in the dialog, which is the only thing that saves the file. Returns what the dialog said.
+ */
 async function download(page, name) {
+  await page.click('[aria-label="Download PDF"]')
+  await page.getByText('Your PDF is ready').waitFor({ timeout: 120000 })
+  const text = await page.locator('[role=dialog]').innerText()
   const [file] = await Promise.all([
-    page.waitForEvent('download', { timeout: 120000 }),
-    page.click('[aria-label="Download PDF"]'),
+    page.waitForEvent('download', { timeout: 10000 }),
+    page.locator('[role=dialog]').getByRole('button', { name: 'Download PDF' }).click(),
   ])
   const path = join(work, name)
   await file.saveAs(path)
-  await page.getByText('Your PDF is ready').waitFor({ timeout: 10000 })
-  const text = await page.locator('[role=dialog]').innerText()
   return { path, bytes: readFileSync(path), filename: file.suggestedFilename(), dialog: text }
 }
 
@@ -543,9 +547,11 @@ function sample(raw, width, boxes) {
     'a failed export says what went wrong, in words',
     (await page.locator('[role=alert]').innerText()).includes('Could not read broken.jpg'),
   )
+  await page.getByRole('button', { name: 'Try again' }).click()
+  await page.getByText('Your PDF is ready').waitFor({ timeout: 30000 })
   const [file] = await Promise.all([
-    page.waitForEvent('download', { timeout: 30000 }),
-    page.getByRole('button', { name: 'Try again' }).click(),
+    page.waitForEvent('download', { timeout: 10000 }),
+    page.locator('[role=dialog]').getByRole('button', { name: 'Download PDF' }).click(),
   ])
   test.check(
     'Try again runs the export again and it succeeds',

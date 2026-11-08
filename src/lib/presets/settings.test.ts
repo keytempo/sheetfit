@@ -11,13 +11,16 @@ describe('which options a preset keeps', () => {
     )
   })
 
-  it('leaves out the units and the preview switches', () => {
+  it('leaves out the units, the preview switches and the packing time limit', () => {
     const kept = Object.keys(settingsFromOptions(DEFAULT_PRINT_OPTIONS))
-    for (const key of ['unit', 'showMargins', 'showSheetNumbers']) expect(kept).not.toContain(key)
+    for (const key of ['unit', 'showMargins', 'showSheetNumbers', 'timeLimit'])
+      expect(kept).not.toContain(key)
   })
 
   it('has an entry for every print option, kept or left out', () => {
-    const left = ['unit', 'showMargins', 'showSheetNumbers']
+    // The time limit is how hard to search, not what is produced: the same preset gives the same
+    // sheets, sizes and gaps at any limit, so it stays with the person's own options.
+    const left = ['unit', 'showMargins', 'showSheetNumbers', 'timeLimit']
     expect([...PRESET_SETTING_KEYS, ...left].sort()).toEqual(
       Object.keys(DEFAULT_PRINT_OPTIONS).sort(),
     )

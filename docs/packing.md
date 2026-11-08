@@ -136,7 +136,11 @@ refineLayout(input: LayoutInput, options?: RefineOptions): Promise<RefineSummary
 REFINEMENT_BUDGET_MS = 3000
 
 // src/packing/worker/client.ts: import it separately so the worker is only bundled where used
-createWorkerRefiner(createWorker?: () => WorkerLike): { refine: RefineFunction; terminate: () => void }
+createWorkerRefiner(createWorker?: () => WorkerLike): {
+  refine: RefineFunction
+  resume: (options?: ResumeOptions) => Promise<RefineSummary>   // continue the latest run if it stopped at its time limit
+  terminate: () => void
+}
 
 interface PackOptions   { seed?: number; exactLimit?: number }
 interface RefineOptions extends PackOptions {
@@ -146,7 +150,8 @@ interface RefineOptions extends PackOptions {
   onFirst?: (layout: LayoutResult) => void        // once, first: the packLayout result
   onImprovement?: (layout: LayoutResult) => void
 }
-interface RefineSummary { layout: LayoutResult | null; steps: number; elapsedMs: number; aborted: boolean }
+interface RefineSummary { layout: LayoutResult | null; steps: number; elapsedMs: number; aborted: boolean; stopped: StopReason }
+type StopReason = 'finished' | 'time-limit' | 'step-limit' | 'aborted'
 type RefineFunction = (input: LayoutInput, options?: RefineOptions) => Promise<RefineSummary>
 ```
 
@@ -586,13 +591,16 @@ shows a layout only as the answer for the input it was computed for.
 
 ### 10.4 The status
 
-| State                                                   | Badge         |
-| ------------------------------------------------------- | ------------- |
-| no answer yet for the latest inputs, or still searching | "Optimizing…" |
-| `status === 'optimal'`                                  | "Optimal"     |
-| finished with `status === 'best-found'`                 | "Best found"  |
+| State                                                   | Badge                             |
+| ------------------------------------------------------- | --------------------------------- |
+| no answer yet for the latest inputs, or still searching | "Optimizing…"                     |
+| `status === 'optimal'`                                  | "Optimal"                         |
+| finished with `status === 'best-found'`                 | "Best found"                      |
+| stopped at the time limit, not optimal, not exhausted   | "Time limit reached" and Continue |
 
 Strict order never refines (its layout is final), so it goes straight to "Optimal" or "Best found".
+A search that stopped because it used up the time limit shows "Time limit reached" with a Continue
+button instead of "Best found" ([10.6](#106-the-time-limit-and-continue)).
 Copies that fit on no sheet get a warning badge above it ("1 copy does not fit on the sheet"), and
 an export says how many it left out.
 
@@ -621,6 +629,68 @@ an export says how many it left out.
     `filter`, `table`). `e2e/` and `src/pdf/` are listed as ignored sources in `src/index.css`.
     The production CSS now differs from before by the two utilities the status spinner needs.
 
+### 10.6 The time limit and Continue
+
+**The setting.** Print options, Layout section: "Packing time limit", whole seconds, **1 to 600**
+(10 minutes), step 1, **default 3 s**, which is the `REFINEMENT_BUDGET_MS` the app has always used
+(a unit test keeps the two equal). One second is the shortest limit offered: long enough for the
+search to do real work on a small job and short enough for quick checks. Ten minutes is a ceiling, so
+that a forgotten search cannot keep a worker busy for hours. The benchmarks in [section 9](#9-benchmarks)
+were run at 3 s; what a longer limit buys on a particular job is not tabulated here, only that the
+search keeps improving while it can and never worsens what is on screen.
+It is stored with the other options, validated by
+`sanitizeOptions` (rounded, clamped, anything that is not a number becomes the default), and
+options saved before it existed load with 3 s without any migration. It is **not** part of a preset
+([presets.md](presets.md)). With Strict order it is disabled, because strict order has nothing to
+search.
+
+**Which run gets which limit.** The limit is read when a search starts (`timeLimitMs()` in
+`src/store/packing.ts`), not followed: it is not part of the packer input, so changing it never
+restarts a search and a running search keeps the limit it began with; it applies from the next run
+or the next Continue.
+
+**Why a run ended.** `RefineSummary.stopped` says: `finished` (nothing left to try or the layout is
+proven optimal), `time-limit`, `step-limit` (only in step-bounded mode) or `aborted`. Only
+`time-limit` can be continued.
+
+**Continuing.** The search is already a deterministic state machine (`Packer.step()`), so continuing
+is just running it again from where it stopped; nothing is replayed. `Refinement`
+(`src/packing/refine.ts`) wraps one `Packer` and can be `run` repeatedly; each run gets a fresh
+budget measured from its own start, and reports only layouts that strictly improve on the best so
+far, so the layout on screen can never get worse. `refinePacked` is `Refinement` run once and
+behaves as before.
+
+**Where the paused search lives.** In the worker (`src/packing/worker/host.ts`). A run that stops at
+its time limit leaves its `Refinement` paused there. A `continue` message names the run it continues
+(`from`); any request, run or continue, discards what was paused first, so only the latest run can be
+continued and a continue for a layout that has since been replaced is answered with a failure and
+never touches the new one. A continued run that again stops at the limit is paused again under its own
+id, so Continue can be used repeatedly. The paused search keeps the packer's working state in the worker until the
+next run replaces it (its size was not measured); nothing is retained in the page. If the worker
+crashes or is terminated nothing is left to continue and Continue is no longer offered.
+
+**What the person sees.** `usePacking` tracks a phase for the current inputs (`searching`,
+`time-limit`, `done`) and returns `limitReached` and `resume`. `limitReached` is true only when the
+layout for the current inputs is on screen, the search stopped at the limit and the layout is not
+proven optimal. The status then reads "Time limit reached" with a Continue button; Continue returns
+the status to "Optimizing…", moves the keyboard focus to the sheets (the button is gone), and when
+the continued search stops at the limit again the button returns.
+
+| Situation                                                | What happens                                                                                                                                        |
+| -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Any input changes (image, copies, size, a layout option) | The search, resumed or not, is cancelled and a fresh one starts with the limit as it is then. While the new layout is pending there is no Continue. |
+| The time limit changes                                   | Nothing restarts; the next run or Continue uses the new value.                                                                                      |
+| The layout is proven optimal                             | No Continue: there is nothing to find.                                                                                                              |
+| Strict order                                             | No search, no Continue.                                                                                                                             |
+| Export while stopped or while continuing                 | Uses the layout on screen when the button is pressed, as always.                                                                                    |
+| The worker cannot run                                    | The layout is packed on the page and is final; no Continue.                                                                                         |
+
+**Reproducibility.** A wall-clock-limited result depends on how fast the machine is and what else it
+is doing, so two runs with the same limit can end differently, and so can a run and its
+continuations. The step-bounded mode (`maxSteps`, used by tests and benchmarks, never by the app) is
+unchanged and still deterministic, and continuing it is deterministic too: running 250 steps and then
+350 more reaches exactly the layout 600 steps reach in one run (`resume.test.ts`).
+
 ## 11. Known limitations
 
 - **No proof of optimality in general.** `optimal` is claimed only when the sheet count meets a
@@ -628,8 +698,8 @@ an export says how many it left out.
 - **Bounds are loose** on mixed sets; the gaps in the results are upper limits.
 - **Strict order is best only among shelf layouts** ([5.8](#58-strict-order)).
 - **Recursive-cut perfect packings** at 100–500 pieces end one sheet above the optimum.
-- **Wall-clock budgets are not reproducible**; use `maxSteps` where results must be. The
-  synchronous result always is.
+- **Wall-clock budgets are not reproducible**, and neither are continued runs; use `maxSteps`
+  where results must be. The synchronous result always is.
 - **Sizes are rounded to a micrometre**, and a sheet side beyond 10 m is capped.
 - **Timings in this document are from one single-core machine** under Node. The browser timings
   for the integrated app (long tasks per scenario) are in [testing.md](testing.md).

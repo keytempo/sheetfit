@@ -54,6 +54,7 @@ export const Piece = memo(function Piece({ placed, image, sheetWidth, sheetHeigh
           animate={{ opacity: dimmed ? 0.35 : 1 }}
           exit={{ opacity: 0, transition: transitions.exit }}
           transition={{ layout: transitions.layout, opacity: transitions.enter }}
+          data-piece=""
           className={cn('group/piece absolute cursor-pointer', selected && 'z-10')}
           style={{
             left: `${(placed.x / sheetWidth) * 100}%`,

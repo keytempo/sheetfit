@@ -6,6 +6,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react'
+import { previewEmptyClick } from '@/features/selection/empty-space'
 import { useAppStore } from '@/store'
 import { currentZoomFactor, setZoomFactor, scaleZoom, zoomWidthCss } from './zoom'
 
@@ -64,6 +65,7 @@ export function ZoomScroller({ sheetWidth, sheetHeight, children }: ZoomScroller
   }
 
   const handlePointerDown = (event: ReactPointerEvent) => {
+    previewEmptyClick.onPointerDown(event)
     if (event.pointerType !== 'touch') return
     touches.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
     if (touches.current.size === 2) {
@@ -85,6 +87,7 @@ export function ZoomScroller({ sheetWidth, sheetHeight, children }: ZoomScroller
   }
 
   const handlePointerEnd = (event: ReactPointerEvent) => {
+    if (event.type === 'pointercancel') previewEmptyClick.onPointerCancel()
     touches.current.delete(event.pointerId)
     if (touches.current.size < 2) pinch.current = null
   }
@@ -101,6 +104,7 @@ export function ZoomScroller({ sheetWidth, sheetHeight, children }: ZoomScroller
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerEnd}
       onPointerCancel={handlePointerEnd}
+      onClick={previewEmptyClick.onClick}
       style={{ '--sheet-w': zoomWidthCss(zoom, sheetWidth, sheetHeight) } as CSSProperties}
       className="canvas-surface absolute inset-0 touch-pan-x touch-pan-y overflow-auto overscroll-contain [--sheet-pad:1rem] [container-type:size] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring md:[--sheet-pad:2rem]"
     >

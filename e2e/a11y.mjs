@@ -7,6 +7,7 @@ import {
   reporter,
   setAllCopies,
   waitForImages,
+  waitForQuiet,
   waitForSettled,
 } from './harness.mjs'
 
@@ -24,6 +25,7 @@ const axeSource = readFileSync(
 const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']
 
 async function audit(page, label) {
+  await waitForQuiet(page)
   await page.evaluate(axeSource)
   const result = await page.evaluate(
     (tags) => axe.run(document, { runOnly: { type: 'tag', values: tags } }),
@@ -67,8 +69,8 @@ for (const scheme of ['light', 'dark']) {
   await waitForSettled(page)
   const settled = (await page.locator('[role=status]').allInnerTexts()).join('|')
   test.check(
-    `${scheme}: the status reads Optimal or Best found once the search ends`,
-    /Optimal|Best found/.test(settled),
+    `${scheme}: the status reads Optimal, Best found or Time limit reached once the search ends`,
+    /Optimal|Best found|Time limit reached/.test(settled),
     settled,
   )
   await audit(page, `${scheme}, packing status settled`)
@@ -80,17 +82,152 @@ for (const scheme of ['light', 'dark']) {
   await page.waitForTimeout(400)
 
   // Export dialog: ready.
-  const [download] = await Promise.all([
-    page.waitForEvent('download'),
-    page.click('[aria-label="Download PDF"]'),
-  ])
-  await download.path()
+  await page.click('[aria-label="Download PDF"]')
   await page.getByText('Your PDF is ready').waitFor()
   await page.waitForTimeout(600)
   await audit(page, `${scheme}, export dialog (ready)`)
+  // Print where the browser has no PDF viewer (the headless shell): the dialog says so.
+  await page.getByRole('dialog').getByRole('button', { name: 'Print', exact: true }).click()
+  await page.getByText(/can.t print a PDF from here/).waitFor()
+  await audit(page, `${scheme}, export dialog (print not possible here)`)
   await page.getByRole('button', { name: 'Done' }).click()
   await page.waitForTimeout(400)
   test.check(`${scheme}: no page errors`, app.log.errors.length === 0, app.log.errors.join('; '))
+  await app.close()
+}
+
+// The "opened in a new tab" note and the blocked-tab warning, in a browser that prints through a tab.
+for (const [label, extra, scheme] of [
+  ['opened in a tab', '', 'light'],
+  ['tab blocked', 'window.open = () => null;', 'light'],
+  ['opened in a tab', '', 'dark'],
+  ['tab blocked', 'window.open = () => null;', 'dark'],
+]) {
+  const app = await open({
+    colorScheme: scheme,
+    init: `(() => { Object.defineProperty(navigator, 'pdfViewerEnabled', { get: () => true }); Object.defineProperty(navigator, 'userAgent', { get: () => 'Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0' }); ${extra} })()`,
+  })
+  const { page } = app
+  await addFiles(page, ['photo.jpg', 'opaque.png'])
+  await waitForImages(page, 2)
+  await page.waitForTimeout(700)
+  await page.click('[aria-label="Download PDF"]')
+  await page.getByText('Your PDF is ready').waitFor()
+  await page.getByRole('dialog').getByRole('button', { name: 'Print', exact: true }).click()
+  await page.getByText(/opened in a new tab|blocked the new tab/).waitFor()
+  await page.waitForTimeout(600)
+  await audit(page, `${scheme}, export dialog (${label})`)
+  await app.close()
+}
+
+// The time-limit state of the status, with its Continue button: a one-second limit on a job too big to
+// finish in it, in both colour schemes and on a phone.
+for (const [label, scheme, width, height] of [
+  ['light', 'light', 1280, 800],
+  ['dark', 'dark', 1280, 800],
+  ['phone', 'light', 390, 844],
+]) {
+  const app = await open({
+    colorScheme: scheme,
+    width,
+    height,
+    storage: JSON.stringify({ state: { options: { timeLimit: 1 } }, version: 1 }),
+  })
+  const { page } = app
+  await addGenerated(
+    page,
+    [
+      [1600, 1200],
+      [1200, 1600],
+      [1920, 1080],
+      [1000, 1000],
+      [1500, 2100],
+      [2100, 1500],
+      [1280, 960],
+      [960, 1280],
+      [1800, 1200],
+      [1100, 1650],
+    ].map(([w, h], i) => ({ width: w, height: h, name: `t${i}.jpg` })),
+  )
+  await waitForImages(page, 10)
+  await setAllCopies(page, 40)
+  if (width === 390)
+    await page
+      .getByRole('navigation', { name: 'Views' })
+      .getByRole('button', { name: 'Preview' })
+      .click()
+  await page.getByText('Time limit reached').waitFor({ timeout: 60000 })
+  await page.waitForTimeout(700)
+  await audit(page, `${label}, status: time limit reached with Continue`)
+  const box = await page
+    .getByRole('button', { name: 'Continue searching for a tighter layout' })
+    .boundingBox()
+  test.check(
+    `${label}: Continue is on screen and at least the 24 px WCAG 2.2 target size`,
+    box !== null && box.x >= 0 && box.x + box.width <= width && box.height >= 24 && box.width >= 24,
+    JSON.stringify(box),
+  )
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  )
+  test.check(
+    `${label}: no horizontal overflow with the time-limit status showing`,
+    overflow <= 0,
+    `${overflow}`,
+  )
+  await app.close()
+}
+
+// Saved work: the "Restoring" state held still, and the notices for work that is only in memory, in both
+// colour schemes and on a phone.
+for (const [label, scheme, width, height, kind] of [
+  ['light', 'light', 1280, 800, 'restoring'],
+  ['dark', 'dark', 1280, 800, 'restoring'],
+  ['phone', 'light', 390, 844, 'restoring'],
+  ['light', 'light', 1280, 800, 'unavailable'],
+  ['dark', 'dark', 1280, 800, 'unavailable'],
+  ['phone', 'light', 390, 844, 'unavailable'],
+  ['dark', 'dark', 1280, 800, 'other-tab'],
+]) {
+  const init =
+    kind === 'restoring'
+      ? // The database never answers, so the state stays put for the audit.
+        `localStorage.setItem('sheetfit:work-hint', '5'); indexedDB.open = () => ({})`
+      : `Object.defineProperty(window, 'indexedDB', { value: undefined, configurable: true })`
+  const app = await open({ colorScheme: scheme, width, height, init })
+  const { page } = app
+  if (kind === 'other-tab') {
+    // A second tab in the same browser, while the first owns the saved work.
+    await app.page.waitForTimeout(500)
+    const second = await app.context.newPage()
+    await second.emulateMedia({ colorScheme: scheme })
+    await second.setViewportSize({ width, height })
+    await second.goto(app.url)
+    await second.waitForTimeout(500)
+  }
+  if (width === 390)
+    await page
+      .getByRole('navigation', { name: 'Views' })
+      .getByRole('button', { name: 'Images' })
+      .click()
+      .catch(() => {})
+  if (kind === 'unavailable') {
+    await addFiles(page, ['photo.jpg'])
+    await waitForImages(page, 1)
+  }
+  await page.waitForTimeout(700)
+  const target = kind === 'other-tab' ? app.context.pages().at(-1) : page
+  const expected = {
+    restoring: /Restoring your work/,
+    unavailable: /can.t save your work/,
+    'other-tab': /another tab/,
+  }[kind]
+  await target.getByText(expected).first().waitFor({ timeout: 10000 })
+  await audit(target, `${label}, saved work: ${kind}`)
+  const overflow = await target.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  )
+  test.check(`${label}, saved work (${kind}): no horizontal overflow`, overflow <= 0, `${overflow}`)
   await app.close()
 }
 
@@ -136,10 +273,11 @@ for (const scheme of ['light', 'dark']) {
   await addGenerated(page, [{ width: 800, height: 600 }])
   await waitForImages(page, 1)
   await setAllCopies(page, 40)
-  const spinner = page.locator('[role=status] svg.animate-spin')
-  const animation = (await spinner.count())
-    ? await spinner.first().evaluate((el) => getComputedStyle(el).animationName)
-    : 'none'
+  // Read in one step: the spinner is gone the moment the search ends, and a detached element reads empty.
+  const animation = await page.evaluate(() => {
+    const spinner = document.querySelector('[role=status] svg.animate-spin')
+    return spinner ? getComputedStyle(spinner).animationName : 'none'
+  })
   test.check('reduced motion: the status spinner does not spin', animation === 'none', animation)
   await app.close()
 }
@@ -183,11 +321,14 @@ for (const [width, height] of [
   if (width === 390) {
     await page.waitForTimeout(600)
     await audit(page, 'phone width, preview tab')
+    await page.click('[aria-label="Download PDF"]')
+    await page.getByText('Your PDF is ready').waitFor()
     const [file] = await Promise.all([
       page.waitForEvent('download'),
-      page.click('[aria-label="Download PDF"]'),
+      page.getByRole('dialog').getByRole('button', { name: 'Download PDF' }).click(),
     ])
     await file.path()
+    await audit(page, 'phone width, export dialog (ready)')
     test.check('phone width: export works from the preview tab', true)
   }
   await app.close()

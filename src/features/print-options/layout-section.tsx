@@ -1,6 +1,7 @@
 import { Field, SwitchField } from './field'
+import { NumberField } from '@/components/number-field'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import type { Ordering } from '@/lib/print-options'
+import { LIMITS, type Ordering } from '@/lib/print-options'
 import { cn } from '@/lib/utils'
 import { useOption } from './use-option'
 
@@ -12,6 +13,7 @@ const ORDERING_HELP: Record<Ordering, string> = {
 export function LayoutSection() {
   const [allowRotation, setAllowRotation] = useOption('allowRotation')
   const [ordering, setOrdering] = useOption('ordering')
+  const [timeLimit, setTimeLimit] = useOption('timeLimit')
   const [cutGuides, setCutGuides] = useOption('cutGuides')
 
   return (
@@ -54,6 +56,30 @@ export function LayoutSection() {
               ))}
             </ul>
           </>
+        )}
+      </Field>
+
+      <Field
+        label="Packing time limit"
+        tooltip="How long the packer may keep searching for a tighter layout. When the time is up the preview offers Continue, which searches again from the best layout found, for as long again."
+        helper={
+          ordering === 'strict'
+            ? 'Not used with Strict order, which has nothing to search.'
+            : 'Longer can save paper but makes you wait. Small jobs finish sooner.'
+        }
+      >
+        {({ controlId }) => (
+          <NumberField
+            id={controlId}
+            aria-label="Packing time limit in seconds"
+            value={timeLimit}
+            onChange={setTimeLimit}
+            min={LIMITS.timeLimit.min}
+            max={LIMITS.timeLimit.max}
+            decimals={0}
+            suffix="s"
+            disabled={ordering === 'strict'}
+          />
         )}
       </Field>
 

@@ -23,7 +23,9 @@ runtime dependency, and runs in a Web Worker.
 | `src/pdf/deflate.ts`        | Streaming Flate through `CompressionStream`                                                             |
 | `src/pdf/testing/`          | A test-only PDF reader and the fixtures (PNG encoder, JPEG header builder, hand-made layouts)           |
 
-`src/lib/download.ts` saves the finished blob.
+`src/lib/download.ts` saves the finished blob. `src/lib/print-pdf.ts` (the logic) and
+`src/lib/print-host.ts` (the browser side) print it, and `src/features/export/ready-step.tsx` is the
+dialog's "Your PDF is ready" step that uses both ([section 4a](#4a-download-and-print)).
 
 ## 2. What goes into the file
 
@@ -107,9 +109,79 @@ images it uses and the cut-guide choice at that moment. Layouts the packer finds
 written are not applied. Copies that fit on no sheet are not exported; the dialog says how many were
 left out.
 
+**Nothing happens by itself.** When the export finishes the PDF is held in memory and the dialog
+says so. Nothing is downloaded, opened or printed until a button is pressed. (Chunks 1 to 4
+downloaded the file the moment it was ready; that was removed because a person who wants to print
+should not first have a file saved that they then have to find, open and delete.)
+
+### 4a. Download and print
+
+The success step shows the filename and size and three buttons: **Download PDF** (primary), **Print**
+(secondary) and **Done**. Both actions work on the same in-memory `Blob`, as often as wanted and in
+any order; Download and Print never disturb each other.
+
 **Download.** A `Blob` and a temporary link, with the object URL released after ten seconds (some
-browsers read the blob a moment after the click). A "Download again" button in the dialog covers a
-browser that blocks a download started after a long task.
+browsers read the blob a moment after the click).
+
+**Print** sends the PDF to the browser's print dialog without saving a file. A page cannot print a
+PDF directly, so the app asks the browser's own PDF viewer to do it. What each browser lets a page
+do was researched and then tried in the one browser available here (Chrome 153):
+
+| Browser                                         | Built-in viewer (`navigator.pdfViewerEnabled`) | Printing a PDF held in a hidden frame                                                                                                                                                                     | What Sheetfit does                                                                         |
+| ----------------------------------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Chrome, Edge, other Chromium                    | yes                                            | Works. The viewer loads in a same-origin frame (checked: `contentDocument.contentType` is `application/pdf` and `contentWindow.print()` can be called) and `print()` opens the print dialog for that PDF. | Hidden frame, then `print()` on it                                                         |
+| Firefox                                         | yes (pdf.js)                                   | Unreliable. Reports describe a permission error from `contentWindow.print()` and a viewer that does not render in a zero-size frame. Not tried here.                                                      | New tab; its viewer has a Print button                                                     |
+| Safari (macOS) and every iOS browser            | yes                                            | Unreliable. Reports describe a PDF frame that prints the page around it instead of the PDF, and iOS has no usable frame printing. Not tried here.                                                         | New tab; use the viewer's Print or Share                                                   |
+| Chrome on Android, any browser without a viewer | no                                             | A PDF is downloaded, not shown. The headless Chromium used by the tests behaves the same: a blob PDF in a frame never loads.                                                                              | No tab (it would only download); a plain message says to download and print from a PDF app |
+
+So `planPrint` (`src/lib/print-pdf.ts`) is a pure function of two facts the browser reports:
+
+1. `pdfViewerEnabled === false` → `unsupported`.
+2. `pdfViewerEnabled === true` and a Chromium user agent (`Chrome/<n>`, also `HeadlessChrome/<n>`) → `frame`.
+3. Anything else, including a browser too old to know `pdfViewerEnabled` → `tab`.
+
+The user-agent test is the one place the app looks at the browser's name; there is no feature that says
+"printing a frame works here", so the known-good engine is named and everything else takes the safe path.
+
+**The frame path** creates a hidden iframe (`aria-hidden`, zero size, `visibility: hidden`) pointing at
+the object URL, waits for it to load, and checks that the frame really holds a PDF
+(`contentDocument.contentType === 'application/pdf'`) before calling `print()`: asking any other frame
+to print would print the app itself. A frame that does not load within 10 seconds, that cannot be
+reached, or whose `print()` throws, is removed and the **tab path** is used instead, so a failure is
+never silent.
+
+**The tab path** calls `window.open(url)`. It runs in the same turn as the click (no `await` before it),
+which is what keeps a popup blocker quiet. If the browser returns no window, the dialog says the tab
+was blocked and to download the PDF.
+
+**One session, one URL.** A print session is created when the success step appears and holds one
+object URL (made when first needed) and at most one frame for all prints. Printing again reuses both.
+Closing the dialog (Done, Escape, or the dialog being replaced by a new export) removes the frame and
+releases the URL; after a tab was opened the release is delayed ten seconds, like a download, because
+the new tab may still be reading it. A print that is still loading when the dialog closes cleans up
+after itself. Calls made while a print is under way share its result, so a double click prints once.
+
+**What the dialog says.** The browser's print dialog needs no message. Otherwise one polite status line
+says what happened: "The PDF opened in a new tab. Print it from there.", "Your browser blocked the new
+tab. Download the PDF and print it from a PDF viewer.", or "This browser can't print a PDF from here.
+Download it and print it from a PDF viewer."
+
+**Printed sizes.** The PDF's pages are the exact sheet size, so a print at 100% puts every photo at its
+exact size. What the print dialog does next is not under the page's control. Print dialogs often offer
+"Fit to page" or "Fit to printable area", and several select it by default (reported for Chrome's PDF
+print preview and for macOS Preview). It shrinks the sheet a little so that a printer's unprintable
+edge fits, and every photo shrinks with it. The app cannot see or change that setting, so the dialog carries one line:
+choose "Actual size" or 100%, not "Fit to page". A printer that cannot print to the sheet's edge will
+also cut off anything inside its margin at 100%; that is what the Page margin setting is for.
+
+**Not tested.** No real printer, and no native print dialog: they cannot be driven from a script, and
+`print()` is a no-op in headless Chrome. The browser suite proves what the page controls: `print()`
+is called once per click on a frame that holds the exported PDF, that PDF has the right page count and
+page size and passes `qpdf --check`, nothing is downloaded or opened by itself, each fallback shows its
+message, a phone-width screen has no overflow, and the object URL and frame are gone after closing.
+Firefox, Safari, Edge and Android were not available; their rows above come from published reports
+and the engine's documented behaviour, and their paths (tab, message) are exercised in Chrome by
+changing what the page is told about the browser.
 
 ## 5. Verification
 
@@ -124,7 +196,7 @@ npm run build && npm run e2e:pdf
   orientations, turned and not; structure through a reader that checks every offset and length;
   byte-identical JPEG streams; exact PNG samples, `tRNS`, reductions, 80 random RGBA pictures;
   keeping the smaller encoding; every fallback; determinism; cancellation; progress; a hundred photos.
-- **Browser and external tools** (`e2e/pdf-export.mjs`, 41 checks): `qpdf --check`, `pdfinfo`,
+- **Browser and external tools** (`e2e/pdf-export.mjs`, 41 checks, each export now ends with an explicit click on Download PDF in the dialog): `qpdf --check`, `pdfinfo`,
   `pdfimages` (the 13 JPEG streams are byte-identical to their sources; the lossless ones equal
   ImageMagick's own decode of the sources), and `pdftoppm` rasters compared with screenshots of the
   preview at 216 points over 54 pieces. Also: determinism, twenty copies against a naive writer (95 %

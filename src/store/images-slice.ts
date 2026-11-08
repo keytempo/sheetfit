@@ -2,7 +2,7 @@ import type { StateCreator } from 'zustand'
 import { LIMITS } from '@/lib/print-options'
 import { matchWidths } from '@/lib/sizing'
 import { clamp, moveItem } from '@/lib/utils'
-import type { AppState, ImageItem, ImagesSlice } from './types'
+import type { AppState, ImageItem, ImagesSlice, NewImage } from './types'
 
 type Slice = StateCreator<AppState, [['zustand/persist', unknown]], [], ImagesSlice>
 
@@ -10,6 +10,12 @@ const revokeUrls = (item: ImageItem) => {
   URL.revokeObjectURL(item.url)
   URL.revokeObjectURL(item.thumbUrl)
 }
+
+const withUrls = (item: NewImage): ImageItem => ({
+  ...item,
+  url: URL.createObjectURL(item.file),
+  thumbUrl: URL.createObjectURL(item.thumbnail),
+})
 
 const updateImage = (images: ImageItem[], id: string, patch: Partial<ImageItem>) =>
   images.map((image) => (image.id === id ? { ...image, ...patch } : image))
@@ -19,11 +25,27 @@ const toCopies = (value: number) => clamp(Math.round(value), LIMITS.copies.min, 
 export const createImagesSlice: Slice = (set, get) => ({
   images: [],
   loadingCount: 0,
+  decodedCount: 0,
+  importEpoch: 0,
+  importKind: 'add',
 
-  addImages: (items) => set((state) => ({ images: [...state.images, ...items] })),
+  beginImport: (count, kind = 'add') => {
+    set((state) => ({ loadingCount: state.loadingCount + count, importKind: kind }))
+    return get().importEpoch
+  },
 
-  changeLoadingCount: (delta) =>
-    set((state) => ({ loadingCount: Math.max(0, state.loadingCount + delta) })),
+  reportDecoded: () => set((state) => ({ decodedCount: state.decodedCount + 1 })),
+
+  commitImport: (items, count, epoch, where = 'end') => {
+    if (get().importEpoch !== epoch) return false
+    const added = items.map(withUrls)
+    set((state) => ({
+      images: where === 'start' ? [...added, ...state.images] : [...state.images, ...added],
+      loadingCount: Math.max(0, state.loadingCount - count),
+      decodedCount: 0,
+    }))
+    return true
+  },
 
   removeImages: (ids) => {
     const removed = get()
@@ -53,7 +75,15 @@ export const createImagesSlice: Slice = (set, get) => ({
 
   clearImages: () => {
     get().images.forEach(revokeUrls)
-    set({ images: [], selectedImageId: null, hoveredPiece: null, currentSheet: 0 })
+    set((state) => ({
+      images: [],
+      selectedImageId: null,
+      hoveredPiece: null,
+      currentSheet: 0,
+      loadingCount: 0,
+      decodedCount: 0,
+      importEpoch: state.importEpoch + 1,
+    }))
   },
 
   moveImage: (id, toIndex) =>

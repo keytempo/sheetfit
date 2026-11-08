@@ -25,6 +25,8 @@ export interface PrintOptions {
   gap: number
   allowRotation: boolean
   ordering: Ordering
+  /** How long, in seconds, the packer may search for a better layout before it stops and offers to continue. */
+  timeLimit: number
   cutGuides: boolean
   showMargins: boolean
   showSheetNumbers: boolean
@@ -59,6 +61,7 @@ export const DEFAULT_PRINT_OPTIONS: PrintOptions = {
   gap: 0,
   allowRotation: true,
   ordering: 'optimize',
+  timeLimit: 3,
   cutGuides: false,
   showMargins: true,
   showSheetNumbers: true,
@@ -72,6 +75,8 @@ export const LIMITS = {
   dpi: { min: 30, max: 1200 },
   margin: { min: 0, max: 50 },
   gap: { min: 0, max: 30 },
+  /** One second is about the shortest search that still finds more than the first layout; ten minutes is long enough to leave it running over a coffee and any longer gains almost nothing (docs/packing.md). */
+  timeLimit: { min: 1, max: 600 },
 } as const
 
 const pick = <T extends string>(value: unknown, allowed: readonly T[], fallback: T): T =>
@@ -80,6 +85,12 @@ const pick = <T extends string>(value: unknown, allowed: readonly T[], fallback:
 const bounded = (value: unknown, range: { min: number; max: number }, fallback: number) =>
   typeof value === 'number' && Number.isFinite(value)
     ? clamp(value, range.min, range.max)
+    : fallback
+
+/** A whole number of units: a time limit of 2.7 seconds is 3 seconds. */
+const whole = (value: unknown, range: { min: number; max: number }, fallback: number) =>
+  typeof value === 'number' && Number.isFinite(value)
+    ? clamp(Math.round(value), range.min, range.max)
     : fallback
 
 const flag = (value: unknown, fallback: boolean) => (typeof value === 'boolean' ? value : fallback)
@@ -107,6 +118,7 @@ export function sanitizeOptions(saved: unknown): PrintOptions {
     gap: bounded(source.gap, LIMITS.gap, d.gap),
     allowRotation: flag(source.allowRotation, d.allowRotation),
     ordering: pick(source.ordering, ORDERINGS, d.ordering),
+    timeLimit: whole(source.timeLimit, LIMITS.timeLimit, d.timeLimit),
     cutGuides: flag(source.cutGuides, d.cutGuides),
     showMargins: flag(source.showMargins, d.showMargins),
     showSheetNumbers: flag(source.showSheetNumbers, d.showSheetNumbers),

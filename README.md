@@ -9,14 +9,15 @@ Everything runs in the browser. Photos are read into memory as object URLs and a
 
 ## Roadmap
 
-| Chunk | Scope                                                                        | Status   |
-| ----- | ---------------------------------------------------------------------------- | -------- |
-| 1     | UI: the complete UI, UX and responsiveness                                   | **Done** |
-| 2     | Packing algorithm: a standalone, tested engine in `src/packing`              | **Done** |
-| 3     | Integration of the packer, real PDF export, and a verification of everything | **Done** |
-| 4     | Presets: named snapshots of the print settings, in a menu in the header      | **Done** |
-| 5     | Persistence of work and batch import                                         | Planned  |
-| 6     | In-app manual (a help button in the header)                                  | Planned  |
+| Chunk | Scope                                                                                      | Status   |
+| ----- | ------------------------------------------------------------------------------------------ | -------- |
+| 1     | UI: the complete UI, UX and responsiveness                                                 | **Done** |
+| 2     | Packing algorithm: a standalone, tested engine in `src/packing`                            | **Done** |
+| 3     | Integration of the packer, real PDF export, and a verification of everything               | **Done** |
+| 4     | Presets: named snapshots of the print settings, in a menu in the header                    | **Done** |
+| 5     | Work persistence, batch import, direct print, deselect and packing time limit (this chunk) | Done     |
+| 6     | In-app manual (a help button in the header)                                                | Planned  |
+| 7     | QA                                                                                         | Planned  |
 
 ## How it works
 
@@ -28,7 +29,22 @@ Everything runs in the browser. Photos are read into memory as object URLs and a
   uses it: [`docs/packing.md`](docs/packing.md).
 - **PDF.** Download PDF writes the layout that is on screen as a PDF in another Web Worker: one page
   per sheet, each photo stored once however many copies there are, JPEGs byte for byte, everything
-  else without loss. Structure, image rules and limits: [`docs/pdf-export.md`](docs/pdf-export.md).
+  else without loss. When it is ready nothing is saved or printed by itself: the dialog offers
+  Download PDF and Print, which sends it to the browser's print dialog from memory without saving a
+  file. Structure, image rules, the print path and what each browser allows:
+  [`docs/pdf-export.md`](docs/pdf-export.md).
+- **Packing time limit.** Print options > Layout > Packing time limit (1 s to 10 min, 3 s by default)
+  is how long the packer may search. When it stops because of the limit the preview says "Time limit
+  reached" and offers Continue, which searches again from the best layout found, for another limit,
+  as often as wanted. It is not part of a preset. See [`docs/packing.md`](docs/packing.md).
+- **Saved work.** Refreshing or closing the app loses nothing: the photos (original bytes, so exports
+  stay lossless), their order, copies and sizes are saved on this device in IndexedDB as they change
+  and restored on load in one step. Nothing is uploaded. One tab owns the saved work and the others
+  work in memory and say so; when storage is unavailable or full the app carries on in memory and
+  says so. See [`docs/persistence.md`](docs/persistence.md).
+- **Photos.** Many photos added at once (file picker, drop or paste) are decoded one after another
+  and added to the list in one step, so the packer runs once for the batch. Clicking empty space in
+  the list or the preview, or pressing Escape, deselects the selected photo.
 - **Presets.** The Presets menu in the header saves the current print settings under a name and
   applies, updates, renames, duplicates, deletes (with Undo), exports and imports them. A preset is
   the sheet, base size, spacing and layout options only: never the photos, their copies or sizes, the
@@ -37,7 +53,7 @@ Everything runs in the browser. Photos are read into memory as object URLs and a
   saved and why, and the rules for storage failures, several tabs and imports:
   [`docs/presets.md`](docs/presets.md).
 - **Verification.** Unit tests, benchmarks and browser checks (layout, every control, PDF validity
-  with external tools, accessibility, responsiveness, presets): [`docs/testing.md`](docs/testing.md).
+  with external tools, accessibility, responsiveness, presets, batch import, deselecting, printing): [`docs/testing.md`](docs/testing.md).
 
 ## Local development
 
@@ -101,23 +117,27 @@ src/
     images/          Window drop overlay, image list, rows, bulk actions
     print-options/   The Print options slide-over, its sections and controls
     preview/         Sheet preview, pieces, toolbar, hover stats, zoom
-    export/          Export dialog
+    export/          Export dialog: progress, then Download PDF and Print
+    selection/       Deselecting: empty-space clicks and Escape
+    work/            Restoring and saving the work (session) and the storage notice
     presets/         The presets menu, its dialogs, actions and wording
   lib/               Units, sizing maths, sheet geometry, contracts, motion tokens, helpers
     presets/         The presets data model: validation, storage, import and export
+    work/            The saved work: records, validation, restore, sync, the IndexedDB store
   packing/           The packing engine, its worker, tests and benchmarks
   pdf/               The PDF writer, its worker, and a test-only PDF reader
   store/             The zustand store (images, options and UI slices), the packing hook, the presets
-docs/                Developer documentation: packing, PDF export, presets, testing
+docs/                Developer documentation: packing, PDF export, presets, persistence, testing
 e2e/                 Browser checks and their fixtures (run against the production build)
 ```
 
 ### State and persistence
 
 One store holds the image list, the print options and UI state. Print options and panel sizes persist
-in `localStorage` (`sheetfit:v1`); the theme persists under `sheetfit:theme`, and the presets under `sheetfit:presets`, which never reads or
-writes the print options. The image list never
-persists, and neither does a layout. Saved settings are checked when they are read back, so a stale or
+in `localStorage` (`sheetfit:v1`); the theme persists under `sheetfit:theme`, and the presets under
+`sheetfit:presets`, which never reads or writes the print options. The photos persist in IndexedDB
+(`sheetfit-work`), separately from all of those ([`docs/persistence.md`](docs/persistence.md)); a
+layout never persists, and neither does the selection. Saved settings are checked when they are read back, so a stale or
 edited entry falls back to valid values. Every length is stored in millimetres whatever unit is
 displayed. Printed sizes, the per-image size limit and DPI are computed when they are read and never
 stored; the layout is the packer's answer for the current photos and options, held in memory by

@@ -8,6 +8,7 @@ import {
   open,
   reporter,
   waitForImages,
+  waitForQuiet,
   waitForSettled,
   watchWorkers,
 } from './harness.mjs'
@@ -20,6 +21,8 @@ import {
  * needs `pdfinfo` from poppler.
  */
 const test = reporter('Presets')
+/** The presets' own dialogs. The Print options slide-over is also a dialog and may still be open or closing beside them. */
+const DIALOG = '[role=dialog]:not([data-slot=sheet-content])'
 const PRESETS_KEY = 'sheetfit:presets'
 const APP_VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url))).version
 const scratch = mkdtempSync(join(tmpdir(), 'sheetfit-presets-'))
@@ -54,7 +57,7 @@ async function save(page, name) {
   const field = page.getByLabel('Name', { exact: true })
   await field.fill(name)
   await field.press('Enter')
-  await page.locator('[role=dialog]').waitFor({ state: 'detached' })
+  await page.locator(DIALOG).waitFor({ state: 'detached' })
 }
 const escapeRe = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 async function apply(page, name) {
@@ -172,7 +175,7 @@ const clean = (app, name) =>
     'Save opens a dialog with the name field focused',
     await field.evaluate((el) => el === document.activeElement),
   )
-  const saveDialogText = await page.locator('[role=dialog]').innerText()
+  const saveDialogText = await page.locator(DIALOG).innerText()
   test.check(
     'the dialog says what is and is not kept',
     /units/.test(saveDialogText) &&
@@ -192,7 +195,7 @@ const clean = (app, name) =>
   )
   await field.fill('  Passport   photos  ')
   await field.press('Enter')
-  await page.locator('[role=dialog]').waitFor({ state: 'detached' })
+  await page.locator(DIALOG).waitFor({ state: 'detached' })
   await sleep(page)
   test.check(
     'saving closes the dialog and returns focus to the control',
@@ -224,7 +227,7 @@ const clean = (app, name) =>
     /already exists/.test(await page.getByRole('alert').innerText()),
   )
   await page.keyboard.press('Escape')
-  await page.locator('[role=dialog]').waitFor({ state: 'detached' })
+  await page.locator(DIALOG).waitFor({ state: 'detached' })
 
   // A second preset with different settings, then apply and the one-run rule.
   await setOptions(page, { sheetSize: 'a3', margin: 12, cutGuides: true })
@@ -358,7 +361,7 @@ const clean = (app, name) =>
   )
   await renameField.fill('Passports')
   await renameField.press('Enter')
-  await page.locator('[role=dialog]').waitFor({ state: 'detached' })
+  await page.locator(DIALOG).waitFor({ state: 'detached' })
   test.check(
     'rename works and keeps the settings and the active mark',
     sameJson(await storedNames(page), ['Passports', 'Big sheet']) &&
@@ -442,7 +445,7 @@ const seeded = (...presets) => ({
 
 async function importFile(page, path, { confirm = false } = {}) {
   await (await menuItem(page, 'Import presets…')).click()
-  const dialog = page.locator('[role=dialog]')
+  const dialog = page.locator(DIALOG)
   await dialog.waitFor()
   const [chooser] = await Promise.all([
     page.waitForEvent('filechooser'),
@@ -460,7 +463,7 @@ async function importFile(page, path, { confirm = false } = {}) {
 }
 const cancelDialog = async (page) => {
   await page.keyboard.press('Escape')
-  await page.locator('[role=dialog]').waitFor({ state: 'detached' })
+  await page.locator(DIALOG).waitFor({ state: 'detached' })
 }
 const file = (name, content) => {
   const path = join(scratch, name)
@@ -649,8 +652,8 @@ const file = (name, content) => {
     'it flags the values that were brought inside their limits',
     /adjusted/.test(mixedPreview),
   )
-  await page.locator('[role=dialog]').getByRole('button', { name: /^Add / }).click()
-  await page.locator('[role=dialog]').waitFor({ state: 'detached' })
+  await page.locator(DIALOG).getByRole('button', { name: /^Add / }).click()
+  await page.locator(DIALOG).waitFor({ state: 'detached' })
   await sleep(page, 200)
   const mixedStored = (await stored(page)).presets.slice(4)
   const clamped = mixedStored.find((p) => p.name === 'Out of range')
@@ -704,7 +707,7 @@ const rawOf = (page, key) => page.evaluate((k) => localStorage.getItem(k), key)
   await managed(page, 'Persisted copy', 'Rename…')
   await page.getByLabel('Name', { exact: true }).fill('Second')
   await page.getByLabel('Name', { exact: true }).press('Enter')
-  await page.locator('[role=dialog]').waitFor({ state: 'detached' })
+  await page.locator(DIALOG).waitFor({ state: 'detached' })
   await managed(page, 'Second', 'Delete')
   test.check(
     'saving, renaming, duplicating and deleting presets leave the stored options byte for byte alone',
@@ -1412,14 +1415,17 @@ const shapeSeed = () => seed(seeded(...SHAPES))
   await page.click('button[aria-label="Download PDF"]')
   await page.getByRole('dialog').waitFor()
   await sleep(page, 300)
+  await page.evaluate(async () => {
+    const { applyPreset } = await import('/src/features/presets/actions.ts')
+    const { presetBook } = await import('/src/store/presets.ts')
+    const letter = presetBook.store.getState().presets.find((p) => p.name === 'Letter landscape')
+    applyPreset(letter.id)
+  })
+  // The export finishes with the dialog's "ready" step; the file is saved only by its button.
+  await page.getByText('Your PDF is ready').waitFor({ timeout: 30000 })
   const [download] = await Promise.all([
-    page.waitForEvent('download', { timeout: 30000 }),
-    page.evaluate(async () => {
-      const { applyPreset } = await import('/src/features/presets/actions.ts')
-      const { presetBook } = await import('/src/store/presets.ts')
-      const letter = presetBook.store.getState().presets.find((p) => p.name === 'Letter landscape')
-      applyPreset(letter.id)
-    }),
+    page.waitForEvent('download', { timeout: 10000 }),
+    page.getByRole('dialog').getByRole('button', { name: 'Download PDF' }).click(),
   ])
   const pdfPath = join(scratch, 'during-export.pdf')
   await download.saveAs(pdfPath)
@@ -1444,9 +1450,10 @@ const shapeSeed = () => seed(seeded(...SHAPES))
       (await label(page)) === 'Presets: Letter landscape',
   )
   await page.click('button[aria-label="Download PDF"]')
+  await page.getByText('Your PDF is ready').waitFor({ timeout: 30000 })
   const [second] = await Promise.all([
-    page.waitForEvent('download', { timeout: 30000 }),
-    page.getByRole('dialog').waitFor(),
+    page.waitForEvent('download', { timeout: 10000 }),
+    page.getByRole('dialog').getByRole('button', { name: 'Download PDF' }).click(),
   ])
   const secondPath = join(scratch, 'after-export.pdf')
   await second.saveAs(secondPath)
@@ -1513,7 +1520,7 @@ const shapeSeed = () => seed(seeded(...SHAPES))
   )
   await page.keyboard.type('Keyboard preset')
   await page.keyboard.press('Enter')
-  await page.locator('[role=dialog]').waitFor({ state: 'detached' })
+  await page.locator(DIALOG).waitFor({ state: 'detached' })
   await sleep(page, 200)
   test.check('saving returns focus to the presets control', (await active()) === 'presets-button')
   test.check('it was saved', (await storedNames(page)).includes('Keyboard preset'))
@@ -1581,7 +1588,7 @@ const shapeSeed = () => seed(seeded(...SHAPES))
   await page.keyboard.press('Enter')
   await field.waitFor()
   await page.keyboard.press('Escape')
-  await page.locator('[role=dialog]').waitFor({ state: 'detached' })
+  await page.locator(DIALOG).waitFor({ state: 'detached' })
   await sleep(page, 200)
   test.check(
     'Escape cancels a dialog and focus returns to the control',
@@ -1686,7 +1693,7 @@ const shapeSeed = () => seed(seeded(...SHAPES))
     (await page.getByRole('menuitem', { name: 'Duplicate', exact: true }).count()) === 1,
   )
   await page.getByRole('menuitem', { name: 'Rename…', exact: true }).tap()
-  const dialog = page.locator('[role=dialog]')
+  const dialog = page.locator(DIALOG)
   await dialog.waitFor()
   await sleep(page, 300)
   const dbox = await dialog.boundingBox()
@@ -1714,7 +1721,7 @@ const shapeSeed = () => seed(seeded(...SHAPES))
   const { page } = app
   await sleep(page, 600)
   const back = () => page.evaluate(() => document.activeElement?.id === 'presets-button')
-  const closed = () => page.locator('[role=dialog]').waitFor({ state: 'detached' })
+  const closed = () => page.locator(DIALOG).waitFor({ state: 'detached' })
 
   await (await menuItem(page, 'Save current settings…')).click()
   await page.getByLabel('Name', { exact: true }).fill('Never saved')
@@ -1737,7 +1744,7 @@ const shapeSeed = () => seed(seeded(...SHAPES))
   )
 
   await (await menuItem(page, 'Import presets…')).click()
-  await page.locator('[role=dialog]').waitFor()
+  await page.locator(DIALOG).waitFor()
   await page.getByRole('button', { name: 'Cancel' }).click()
   await closed()
   await sleep(page, 200)
@@ -1774,6 +1781,7 @@ const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']
  */
 async function audit(page, label, { menu: menuOpen = false } = {}) {
   await sleep(page, 450) // let a menu or dialog finish scaling in before it is sampled
+  await waitForQuiet(page)
   await page.evaluate(axeSource)
   const result = await page.evaluate(
     ({ tags, skip }) =>
@@ -1834,19 +1842,19 @@ for (const scheme of ['light', 'dark']) {
   await page.getByRole('menuitem', { name: 'Labels', exact: true }).click()
   await audit(page, tag('a preset’s actions submenu'), { menu: true })
   await page.getByRole('menuitem', { name: 'Rename…', exact: true }).click()
-  await page.locator('[role=dialog]').waitFor()
+  await page.locator(DIALOG).waitFor()
   await audit(page, tag('rename dialog'))
   await page.keyboard.press('Escape')
-  await page.locator('[role=dialog]').waitFor({ state: 'detached' })
+  await page.locator(DIALOG).waitFor({ state: 'detached' })
 
   await (await menuItem(page, 'Save current settings…')).click()
-  await page.locator('[role=dialog]').waitFor()
+  await page.locator(DIALOG).waitFor()
   await audit(page, tag('save dialog'))
   await page.getByLabel('Name', { exact: true }).press('Enter')
   await page.getByRole('alert').waitFor()
   await audit(page, tag('save dialog, name refused'))
   await page.keyboard.press('Escape')
-  await page.locator('[role=dialog]').waitFor({ state: 'detached' })
+  await page.locator(DIALOG).waitFor({ state: 'detached' })
 
   await managed(page, 'Labels', 'Delete')
   await toast(page).first().waitFor()
@@ -1856,7 +1864,7 @@ for (const scheme of ['light', 'dark']) {
   await importFile(page, notPresets)
   test.check(
     `${scheme}: a refused file shows its reason`,
-    /not a Sheetfit presets file/.test(await page.locator('[role=dialog]').innerText()),
+    /not a Sheetfit presets file/.test(await page.locator(DIALOG).innerText()),
   )
   await audit(page, tag('import dialog, file refused'))
   await page.getByRole('button', { name: 'Choose another file' }).click({ trial: true })
@@ -1869,7 +1877,7 @@ for (const scheme of ['light', 'dark']) {
   await audit(page, tag('import dialog, preview with skipped entries'))
   await cancelDialog(page)
   await (await menuItem(page, 'Import presets…')).click()
-  await page.locator('[role=dialog]').waitFor()
+  await page.locator(DIALOG).waitFor()
   await audit(page, tag('import dialog, choose a file'))
   await cancelDialog(page)
   test.check(`${scheme}: no page errors`, app.log.errors.length === 0, app.log.errors.join('; '))
@@ -1939,7 +1947,7 @@ for (const scheme of ['light', 'dark']) {
   await page.tap('#presets-button')
   await menu(page).waitFor()
   await page.getByRole('menuitem', { name: 'Save current settings…' }).tap()
-  await page.locator('[role=dialog]').waitFor()
+  await page.locator(DIALOG).waitFor()
   await audit(page, `phone, ${scheme}, save dialog`)
   await phone.close()
   await app.close()

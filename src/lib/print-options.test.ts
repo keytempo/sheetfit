@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { Random } from '../packing/random'
 import { packLayout } from '../packing/pack'
 import { sanitizePanelLayout } from '../store/ui-slice'
+import { REFINEMENT_BUDGET_MS } from '../packing/refine'
 import { buildLayoutInput } from './layout-input'
 import { DEFAULT_PRINT_OPTIONS, LIMITS, sanitizeOptions } from './print-options'
 
@@ -21,6 +22,7 @@ describe('sanitizeOptions', () => {
       gap: 3,
       allowRotation: false,
       ordering: 'strict' as const,
+      timeLimit: 45,
       cutGuides: true,
       showMargins: false,
       showSheetNumbers: false,
@@ -65,6 +67,28 @@ describe('sanitizeOptions', () => {
     expect(result.margin).toBe(0)
     expect(result.gap).toBe(DEFAULT_PRINT_OPTIONS.gap)
     expect(sanitizeOptions({ margin: Infinity }).margin).toBe(DEFAULT_PRINT_OPTIONS.margin)
+  })
+
+  it('keeps the packing time the app has always used as the default', () => {
+    expect(DEFAULT_PRINT_OPTIONS.timeLimit * 1000).toBe(REFINEMENT_BUDGET_MS)
+  })
+
+  it('gives options saved before the time limit existed the default time limit', () => {
+    const older: Partial<typeof DEFAULT_PRINT_OPTIONS> = { ...DEFAULT_PRINT_OPTIONS }
+    delete older.timeLimit
+    expect(sanitizeOptions({ ...older, margin: 8 }).timeLimit).toBe(DEFAULT_PRINT_OPTIONS.timeLimit)
+  })
+
+  it('keeps the time limit a whole number of seconds inside its limits', () => {
+    const limit = (timeLimit: unknown) => sanitizeOptions({ timeLimit }).timeLimit
+    expect(limit(30)).toBe(30)
+    expect(limit(2.6)).toBe(3)
+    expect(limit(0)).toBe(LIMITS.timeLimit.min)
+    expect(limit(-5)).toBe(LIMITS.timeLimit.min)
+    expect(limit(0.4)).toBe(LIMITS.timeLimit.min)
+    expect(limit(100_000)).toBe(LIMITS.timeLimit.max)
+    for (const bad of ['30', null, undefined, NaN, Infinity, {}, [], true])
+      expect(limit(bad)).toBe(DEFAULT_PRINT_OPTIONS.timeLimit)
   })
 
   it('whatever was saved, the sheets can be packed and every copy is placed', () => {

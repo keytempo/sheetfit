@@ -22,6 +22,7 @@ import { useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
+import { listEmptyClick } from '@/features/selection/empty-space'
 import { useAppStore } from '@/store'
 import { DragGrip } from './drag-grip'
 import { ImagePreviewDialog, type PreviewState } from './image-preview-dialog'
@@ -78,6 +79,7 @@ function SkeletonRow() {
 export function ImageList() {
   const images = useAppStore((state) => state.images)
   const loadingCount = useAppStore((state) => state.loadingCount)
+  const restoring = useAppStore((state) => state.workStatus === 'restoring')
   const selectedImageId = useAppStore((state) => state.selectedImageId)
   const moveImage = useAppStore((state) => state.moveImage)
   // The ids only change when images are added, removed or reordered, not when one is resized.
@@ -121,8 +123,17 @@ export function ImageList() {
         onDragCancel={() => setActiveId(null)}
       >
         <SortableContext items={ids} strategy={verticalListSortingStrategy}>
-          <ScrollArea className="min-h-0 flex-1">
-            <ul aria-label="Images" aria-busy={loadingCount > 0} className="flex flex-col">
+          <ScrollArea
+            className="min-h-0 flex-1"
+            onPointerDown={listEmptyClick.onPointerDown}
+            onPointerCancel={listEmptyClick.onPointerCancel}
+            onClick={listEmptyClick.onClick}
+          >
+            <ul
+              aria-label="Images"
+              aria-busy={loadingCount > 0 || restoring}
+              className="flex flex-col"
+            >
               <AnimatePresence initial={false}>
                 {images.map((image, index) => (
                   <SortableImageRow
@@ -135,9 +146,12 @@ export function ImageList() {
                   />
                 ))}
               </AnimatePresence>
-              {Array.from({ length: Math.min(loadingCount, 4) }, (_, i) => (
-                <SkeletonRow key={`loading-${i}`} />
-              ))}
+              {Array.from(
+                { length: Math.min(restoring ? Math.max(loadingCount, 3) : loadingCount, 4) },
+                (_, i) => (
+                  <SkeletonRow key={`loading-${i}`} />
+                ),
+              )}
             </ul>
           </ScrollArea>
         </SortableContext>

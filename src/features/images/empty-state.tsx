@@ -76,7 +76,8 @@ export function EmptyState() {
         Add images
       </AddImagesButton>
       <p className="max-w-[16rem] text-xs text-balance text-muted-foreground">
-        You can also paste from the clipboard. Images stay in your browser; nothing is uploaded.
+        You can also paste from the clipboard. Images stay on this device and are kept here, so a
+        reload does not lose them; nothing is uploaded.
       </p>
     </div>
   )

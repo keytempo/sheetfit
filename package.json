@@ -18,12 +18,17 @@
     "test": "vitest run",
     "bench": "vitest bench --run",
     "bench:report": "vitest run --config vitest.report.config.ts",
-    "e2e": "npm run e2e:layout && npm run e2e:controls && npm run e2e:pdf && npm run e2e:a11y && npm run e2e:presets",
+    "e2e": "npm run e2e:layout && npm run e2e:controls && npm run e2e:pdf && npm run e2e:a11y && npm run e2e:presets && npm run e2e:import && npm run e2e:selection && npm run e2e:print && npm run e2e:timelimit && npm run e2e:persist",
     "e2e:layout": "node e2e/layout.mjs",
     "e2e:controls": "node e2e/controls.mjs",
     "e2e:pdf": "node e2e/pdf-export.mjs",
     "e2e:a11y": "node e2e/a11y.mjs",
     "e2e:presets": "node e2e/presets.mjs",
+    "e2e:import": "node e2e/import.mjs",
+    "e2e:selection": "node e2e/selection.mjs",
+    "e2e:print": "node e2e/print.mjs",
+    "e2e:timelimit": "node e2e/timelimit.mjs",
+    "e2e:persist": "node e2e/persist.mjs",
     "e2e:perf": "node e2e/responsiveness.mjs"
   },
   "dependencies": {

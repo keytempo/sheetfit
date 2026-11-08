@@ -82,10 +82,10 @@ for (const pieces of SIZES) {
   )
   if (!process.env.SHEETFIT_NO_STATUS) {
     test.check(
-      `${pieces} pieces: settles to Optimal or Best found`,
+      `${pieces} pieces: settles to Optimal, Best found or Time limit reached`,
       (await page
         .locator('[role=status]')
-        .filter({ hasText: /Optimal|Best found/ })
+        .filter({ hasText: /Optimal|Best found|Time limit reached/ })
         .count()) > 0,
     )
   }

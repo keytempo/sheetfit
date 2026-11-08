@@ -108,6 +108,7 @@ export function ImageRow({
     <div
       id={lifted ? undefined : rowDomId(image.id)}
       role="group"
+      data-image-row=""
       aria-label={image.name}
       aria-current={selected ? 'true' : undefined}
       tabIndex={lifted ? undefined : tabbable ? 0 : -1}

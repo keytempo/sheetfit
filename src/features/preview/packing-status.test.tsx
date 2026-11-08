@@ -6,8 +6,15 @@ import { PackingStatus } from './packing-status'
 
 const sheet = [{ imageId: 'a', x: 10, y: 10, width: 20, height: 20 }]
 
-function render(layout: LayoutResult, searching = false) {
-  return renderToStaticMarkup(<PackingStatus layout={layout} searching={searching} />)
+function render(layout: LayoutResult, searching = false, limitReached = false) {
+  return renderToStaticMarkup(
+    <PackingStatus
+      layout={layout}
+      searching={searching}
+      limitReached={limitReached}
+      onContinue={() => {}}
+    />,
+  )
 }
 
 const withStatus = (status: LayoutResult['status']): LayoutResult => ({
@@ -41,6 +48,38 @@ describe('PackingStatus', () => {
       expect(html).toContain('Optimizing…')
       expect(html).not.toContain('Optimal<')
     }
+  })
+
+  it('says the time limit was reached, and offers Continue, instead of Best found', () => {
+    const html = render(withStatus('best-found'), false, true)
+    expect(html).toContain('Time limit reached')
+    expect(html).toContain('>Continue<')
+    expect(html).toContain('aria-label="Continue searching for a tighter layout"')
+    expect(html).not.toContain('Best found')
+    expect(html).not.toContain('Optimizing')
+  })
+
+  it('announces the time limit as a status, and keeps Continue out of the announcement', () => {
+    const html = render(withStatus('best-found'), false, true)
+    const status = html.match(/<span role="status"[^>]*>(.*?)<\/span>/)?.[1] ?? ''
+    expect(status).toContain('Time limit reached')
+    expect(status).not.toContain('Continue')
+  })
+
+  it('shows Optimizing… while a continued search runs, with no Continue to press again', () => {
+    const html = render(withStatus('best-found'), true, true)
+    expect(html).toContain('Optimizing…')
+    expect(html).not.toContain('Continue')
+    expect(html).not.toContain('Time limit reached')
+  })
+
+  it('offers no Continue for a layout that needs none', () => {
+    expect(render(withStatus('optimal'))).not.toContain('Continue')
+    expect(render(withStatus('best-found'))).not.toContain('Continue')
+  })
+
+  it('shows no time-limit state when there are no sheets', () => {
+    expect(render(handLayout([]), false, true)).not.toContain('Time limit reached')
   })
 
   it('announces the status as a status region and stops the spinner for reduced motion', () => {

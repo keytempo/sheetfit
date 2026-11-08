@@ -1,5 +1,5 @@
-import type { LayoutInput } from '../../lib/layout-types.ts'
-import type { RefineFunction, RefineSummary } from '../refine.ts'
+import type { LayoutInput, LayoutResult } from '../../lib/layout-types.ts'
+import type { RefineFunction, RefineOptions, RefineSummary } from '../refine.ts'
 import { toLayoutResult } from '../result.ts'
 import type { WorkerRequest, WorkerResponse } from './protocol.ts'
 
@@ -22,9 +22,25 @@ interface Run {
   finish: (response: Extract<WorkerResponse, { type: 'done' }>) => void
 }
 
+export interface ResumeOptions {
+  /** Cancels the run. Nothing is published once it is aborted. */
+  signal?: AbortSignal
+  /** Wall-clock budget of this run in milliseconds. */
+  budgetMs?: number
+  maxSteps?: number
+  /** Called with every layout that strictly improves on the best one so far. */
+  onImprovement?: (layout: LayoutResult) => void
+}
+
 export interface WorkerRefiner {
   /** The same function as `refineLayout`, but the work happens in the worker. */
   refine: RefineFunction
+  /**
+   * Carries on with the latest run if it stopped at its time limit, from the best layout it had
+   * found, as a run of its own. Rejects when there is nothing to continue: the latest run ended
+   * some other way, or a newer run has started since.
+   */
+  resume: (options?: ResumeOptions) => Promise<RefineSummary>
   /** Stops the worker. A later `refine` starts a new one. */
   terminate: () => void
 }
@@ -40,6 +56,8 @@ export function createWorkerRefiner(
   let worker: WorkerLike | null = null
   let nextId = 1
   const runs = new Map<number, Run>()
+  /** The latest run, if it stopped at its time limit and so can be continued. */
+  let resumable: { id: number; input: LayoutInput } | null = null
 
   const start = () => {
     if (worker) return worker
@@ -54,6 +72,7 @@ export function createWorkerRefiner(
       else run.fail(new Error(response.message))
     })
     created.addEventListener('error', (event) => {
+      resumable = null
       for (const run of [...runs.values()])
         run.fail(new Error(event.message || 'The packing worker crashed.'))
       created.terminate()
@@ -63,15 +82,21 @@ export function createWorkerRefiner(
     return created
   }
 
-  const refine: RefineFunction = (input: LayoutInput, options = {}) =>
+  /** What `refine` and `resume` share: one run in the worker, reported through callbacks. */
+  const launch = (
+    input: LayoutInput,
+    signal: AbortSignal | undefined,
+    callbacks: Pick<RefineOptions, 'onFirst' | 'onImprovement'>,
+    request: (id: number) => WorkerRequest,
+  ) =>
     new Promise<RefineSummary>((resolve, reject) => {
-      const { onFirst, onImprovement, signal, ...limits } = options
       const startedAt = performance.now()
       const aborted = (layout: RefineSummary['layout']): RefineSummary => ({
         layout,
         steps: 0,
         elapsedMs: performance.now() - startedAt,
         aborted: true,
+        stopped: 'aborted',
       })
       if (signal?.aborted) {
         resolve(aborted(null))
@@ -97,37 +122,59 @@ export function createWorkerRefiner(
         },
         first: ({ layout }) => {
           latest = toLayoutResult(input, layout)
-          onFirst?.(latest)
+          callbacks.onFirst?.(latest)
         },
         improved: ({ layout }) => {
           latest = toLayoutResult(input, layout)
-          onImprovement?.(latest)
+          callbacks.onImprovement?.(latest)
         },
         finish: ({ summary }) => {
           end()
+          if (summary.stopped === 'time-limit') resumable = { id, input }
           resolve({ ...summary, layout: toLayoutResult(input, summary.layout) })
         },
       })
       signal?.addEventListener('abort', onAbort, { once: true })
-      start().postMessage({
-        type: 'run',
-        id,
-        input: {
-          sheetSize: input.sheetSize,
-          orientation: input.orientation,
-          margin: input.margin,
-          gap: input.gap,
-          allowRotation: input.allowRotation,
-          ordering: input.ordering,
-          pieces: input.pieces.map(({ width, height }) => ({ width, height })),
-        },
-        limits,
-      })
+      start().postMessage(request(id))
     })
+
+  const refine: RefineFunction = (input: LayoutInput, options = {}) => {
+    const { onFirst, onImprovement, signal, ...limits } = options
+    resumable = null
+    return launch(input, signal, { onFirst, onImprovement }, (id) => ({
+      type: 'run',
+      id,
+      input: {
+        sheetSize: input.sheetSize,
+        orientation: input.orientation,
+        margin: input.margin,
+        gap: input.gap,
+        allowRotation: input.allowRotation,
+        ordering: input.ordering,
+        pieces: input.pieces.map(({ width, height }) => ({ width, height })),
+      },
+      limits,
+    }))
+  }
+
+  const resume = (options: ResumeOptions = {}) => {
+    const from = resumable
+    resumable = null
+    if (!from) return Promise.reject(new Error('There is no search to continue.'))
+    const { signal, onImprovement, ...limits } = options
+    return launch(from.input, signal, { onImprovement }, (id) => ({
+      type: 'continue',
+      id,
+      from: from.id,
+      limits,
+    }))
+  }
 
   return {
     refine,
+    resume,
     terminate: () => {
+      resumable = null
       worker?.terminate()
       worker = null
       for (const run of [...runs.values()])
