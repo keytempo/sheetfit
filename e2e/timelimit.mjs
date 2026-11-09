@@ -46,14 +46,42 @@ const waitForRows = (page, n) =>
   page.waitForFunction((n) => document.querySelectorAll('[data-image-row]').length === n, n, {
     timeout: 60000,
   })
-const limitReached = (page, timeout = 60000) =>
-  page.getByText('Time limit reached').waitFor({ timeout })
+const limitReached = (page, timeout = 60000) => continueButton(page).waitFor({ timeout })
 const bestSheets = async (page, id) =>
   Math.min(
     ...(await received(page))
       .filter((m) => m.id === id && m.layout)
       .map((m) => m.layout.sheets.length),
   )
+
+/** What a status pill looks like, apart from its width, which follows its words. */
+const pillStyle = (locator) =>
+  locator.evaluate((el) => {
+    const s = getComputedStyle(el)
+    const keys = [
+      'fontSize',
+      'fontWeight',
+      'fontFamily',
+      'lineHeight',
+      'color',
+      'backgroundColor',
+      'borderTopWidth',
+      'borderTopColor',
+      'borderTopStyle',
+      'borderRadius',
+      'paddingTop',
+      'paddingRight',
+      'paddingBottom',
+      'paddingLeft',
+      'height',
+      'boxShadow',
+      'backdropFilter',
+      'opacity',
+      'display',
+    ]
+    return Object.fromEntries(keys.map((key) => [key, s[key]]))
+  })
+let continueStyle = null
 
 async function openOptions(page) {
   await page.click('#print-options-button')
@@ -190,6 +218,19 @@ async function main() {
       (await statusText(page)).includes('Time limit reached') &&
         (await continueButton(page).count()) === 1,
     )
+    const pill = continueButton(page)
+    t.check(
+      'the time-limit state shows just "Continue": no icon and no other visible label',
+      (await pill.innerText()) === 'Continue' && (await pill.locator('svg').count()) === 0,
+    )
+    const resting = await pillStyle(pill)
+    await pill.hover()
+    await page.waitForTimeout(400)
+    t.check(
+      'it has no hover effect: every style is the same under the pointer',
+      JSON.stringify(await pillStyle(pill)) === JSON.stringify(resting),
+    )
+    continueStyle = resting
     t.check('Best found is not shown beside it', !(await statusText(page)).includes('Best found'))
     t.check(
       'the worker said the run stopped at the time limit',
@@ -218,7 +259,7 @@ async function main() {
       pages === onScreen,
       `${pages} pages, ${onScreen} sheets`,
     )
-    await page.getByRole('button', { name: 'Done' }).click()
+    await page.getByRole('dialog').getByRole('button', { name: 'Close' }).click()
     await page.waitForTimeout(400)
 
     // ---- 4. Continue.
@@ -242,7 +283,9 @@ async function main() {
     )
     await limitReached(page)
     const [c1] = await continues(page)
-    const best1 = await bestSheets(page, c1.id)
+    // A continued run that finds nothing better reports nothing, which is fine: it holds.
+    const reported1 = (await received(page)).filter((m) => m.id === c1.id && m.layout)
+    const best1 = Math.min(bestBefore, ...reported1.map((m) => m.layout.sheets.length))
     t.check(
       'it ran for the limit and stopped there again',
       (await received(page)).some(
@@ -251,8 +294,8 @@ async function main() {
     )
     t.check(
       'Continue never worsens the layout (sheets)',
-      best1 <= bestBefore,
-      `${best1} <= ${bestBefore}`,
+      reported1.every((m) => m.layout.sheets.length <= bestBefore),
+      `${reported1.length} improvements reported, best ${best1} (was ${bestBefore})`,
     )
     t.check('and no copy is lost', (await page.locator('[data-piece]').count()) === pieces)
     t.check(
@@ -356,6 +399,14 @@ async function main() {
       'a layout proven optimal says Optimal and offers no Continue',
       /Optimal/.test(await statusText(page)) && (await continueButton(page).count()) === 0,
       await statusText(page),
+    )
+    const optimalStyle = await pillStyle(page.locator('[data-slot=badge][role=status]'))
+    t.check(
+      'the Continue pill has the same size, colours, border and background as the Optimal pill',
+      JSON.stringify(optimalStyle) === JSON.stringify(continueStyle),
+      JSON.stringify(
+        Object.keys(optimalStyle).filter((k) => optimalStyle[k] !== continueStyle?.[k]),
+      ),
     )
     await app.close()
 

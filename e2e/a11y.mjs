@@ -90,7 +90,7 @@ for (const scheme of ['light', 'dark']) {
   await page.getByRole('dialog').getByRole('button', { name: 'Print', exact: true }).click()
   await page.getByText(/can.t print a PDF from here/).waitFor()
   await audit(page, `${scheme}, export dialog (print not possible here)`)
-  await page.getByRole('button', { name: 'Done' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Close' }).click()
   await page.waitForTimeout(400)
   test.check(`${scheme}: no page errors`, app.log.errors.length === 0, app.log.errors.join('; '))
   await app.close()
@@ -156,15 +156,41 @@ for (const [label, scheme, width, height] of [
       .getByRole('navigation', { name: 'Views' })
       .getByRole('button', { name: 'Preview' })
       .click()
-  await page.getByText('Time limit reached').waitFor({ timeout: 60000 })
+  await page
+    .getByRole('button', { name: 'Continue searching for a tighter layout' })
+    .waitFor({ timeout: 60000 })
   await page.waitForTimeout(700)
   await audit(page, `${label}, status: time limit reached with Continue`)
-  const box = await page
-    .getByRole('button', { name: 'Continue searching for a tighter layout' })
-    .boundingBox()
+  const continueButton = page.getByRole('button', {
+    name: 'Continue searching for a tighter layout',
+  })
+  const box = await continueButton.boundingBox()
+  // Points 2 px outside each edge of the pill, in the margin the button adds round itself (3 px: the
+  // padding box starts inside the 1 px border).
+  const hits = box
+    ? await page.evaluate(
+        ({ x, y, width: w, height: h }) =>
+          [
+            [x + w / 2, y - 2],
+            [x + w / 2, y + h + 2],
+            [x - 2, y + h / 2],
+            [x + w + 2, y + h / 2],
+          ].map(
+            ([px, py]) =>
+              document.elementFromPoint(px, py)?.getAttribute('aria-label') ===
+              'Continue searching for a tighter layout',
+          ),
+        box,
+      )
+    : []
   test.check(
-    `${label}: Continue is on screen and at least the 24 px WCAG 2.2 target size`,
-    box !== null && box.x >= 0 && box.x + box.width <= width && box.height >= 24 && box.width >= 24,
+    `${label}: Continue is on screen, and its clickable area (a 3 px margin round the 22 px pill) is at least the 24 px WCAG 2.2 target size`,
+    box !== null &&
+      box.x >= 0 &&
+      box.x + box.width <= width &&
+      box.width >= 24 &&
+      hits.every(Boolean) &&
+      box.height + 6 >= 24,
     JSON.stringify(box),
   )
   const overflow = await page.evaluate(

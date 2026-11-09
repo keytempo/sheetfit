@@ -17,7 +17,7 @@ export function ListSummary() {
   return (
     <p className="truncate font-mono text-xs text-muted-foreground tabular-nums">
       {loadingCount > 0
-        ? `${importKind === 'restore' ? 'Restoring' : 'Adding'} ${decodedCount} of ${loadingCount}…`
+        ? `${importKind === 'restore' ? 'Restoring' : 'Importing'} ${decodedCount} of ${loadingCount}…`
         : restoring
           ? 'Restoring your work…'
           : `${pluralize(totalPieces, 'piece')} · ${pluralize(imageCount, 'image')}`}

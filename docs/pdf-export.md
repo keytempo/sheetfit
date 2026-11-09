@@ -116,8 +116,9 @@ should not first have a file saved that they then have to find, open and delete.
 
 ### 4a. Download and print
 
-The success step shows the filename and size and three buttons: **Download PDF** (primary), **Print**
-(secondary) and **Done**. Both actions work on the same in-memory `Blob`, as often as wanted and in
+The success step shows the filename and size and two buttons: **Download PDF** (primary) and **Print**
+(secondary); the dialog closes with its own close button (X) and with Escape, and there is no separate
+"Done". Both actions work on the same in-memory `Blob`, as often as wanted and in
 any order; Download and Print never disturb each other.
 
 **Download.** A `Blob` and a temporary link, with the object URL released after ten seconds (some
@@ -156,7 +157,7 @@ was blocked and to download the PDF.
 
 **One session, one URL.** A print session is created when the success step appears and holds one
 object URL (made when first needed) and at most one frame for all prints. Printing again reuses both.
-Closing the dialog (Done, Escape, or the dialog being replaced by a new export) removes the frame and
+Closing the dialog (its close button, Escape, or the dialog being replaced by a new export) removes the frame and
 releases the URL; after a tab was opened the release is delayed ten seconds, like a download, because
 the new tab may still be reading it. A print that is still loading when the dialog closes cleans up
 after itself. Calls made while a print is under way share its result, so a double click prints once.
@@ -170,8 +171,10 @@ Download it and print it from a PDF viewer."
 exact size. What the print dialog does next is not under the page's control. Print dialogs often offer
 "Fit to page" or "Fit to printable area", and several select it by default (reported for Chrome's PDF
 print preview and for macOS Preview). It shrinks the sheet a little so that a printer's unprintable
-edge fits, and every photo shrinks with it. The app cannot see or change that setting, so the dialog carries one line:
-choose "Actual size" or 100%, not "Fit to page". A printer that cannot print to the sheet's edge will
+edge fits, and every photo shrinks with it. The app cannot see or change that setting, and the dialog shows no tip about it (an earlier
+version carried one line, "choose Actual size or 100%", which was removed). A person who finds
+that prints come out slightly small should look for "Actual size" or 100% in the browser's print
+dialog. A printer that cannot print to the sheet's edge will
 also cut off anything inside its margin at 100%; that is what the Page margin setting is for.
 
 **Not tested.** No real printer, and no native print dialog: they cannot be driven from a script, and

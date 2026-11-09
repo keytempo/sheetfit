@@ -1,14 +1,11 @@
-import {
-  CircleCheckIcon,
-  CircleDotIcon,
-  LoaderCircleIcon,
-  TimerIcon,
-  TriangleAlertIcon,
-} from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
+import { CircleCheckIcon, CircleDotIcon, LoaderCircleIcon, TriangleAlertIcon } from 'lucide-react'
+import { Badge, badgeVariants } from '@/components/ui/badge'
 import { pluralize } from '@/lib/format'
 import type { LayoutResult } from '@/lib/layout-types'
+import { cn } from '@/lib/utils'
+
+/** What the status pill looks like in every state, Continue included: the same tokens, nothing added. */
+const STATUS_PILL = 'bg-card/85 text-muted-foreground backdrop-blur-sm'
 
 interface PackingStatusProps {
   layout: LayoutResult
@@ -22,7 +19,8 @@ interface PackingStatusProps {
 /**
  * Tells the truth about the layout on screen: still being improved, proven to use the fewest
  * sheets possible, the best the packer found, or the best it found when the time limit ran out,
- * which comes with a Continue button. Copies that fit on no sheet get their own notice.
+ * which shows as a Continue pill that looks like the others. Copies that fit on no sheet get
+ * their own notice.
  */
 export function PackingStatus({ layout, searching, limitReached, onContinue }: PackingStatusProps) {
   const unplaced = layout.unplaceable.length
@@ -37,30 +35,29 @@ export function PackingStatus({ layout, searching, limitReached, onContinue }: P
         </Badge>
       )}
       {layout.sheets.length > 0 && !searching && limitReached && (
-        <Badge
-          variant="outline"
-          className="pointer-events-auto bg-card/85 py-0 pr-0.5 text-muted-foreground backdrop-blur-sm"
-        >
-          <span role="status" className="inline-flex items-center gap-1">
-            <TimerIcon />
+        <>
+          {/* What a screen reader hears; what everyone sees is the Continue pill. */}
+          <span role="status" className="sr-only">
             Time limit reached
           </span>
-          <Button
-            variant="ghost"
-            className="h-6 rounded-full px-2 text-xs"
+          <button
+            type="button"
             aria-label="Continue searching for a tighter layout"
+            className={cn(
+              badgeVariants({ variant: 'outline' }),
+              STATUS_PILL,
+              // Looks like the pill beside it. What is added is invisible: the pointer, the focus ring, and a
+              // clickable margin round it (wider on touch screens) so a 22 px pill is still an easy target.
+              'pointer-events-auto relative cursor-pointer overflow-visible outline-none after:absolute after:-inset-1 pointer-coarse:after:-inset-3 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50',
+            )}
             onClick={onContinue}
           >
             Continue
-          </Button>
-        </Badge>
+          </button>
+        </>
       )}
       {layout.sheets.length > 0 && (searching || !limitReached) && (
-        <Badge
-          role="status"
-          variant="outline"
-          className="bg-card/85 text-muted-foreground backdrop-blur-sm"
-        >
+        <Badge role="status" variant="outline" className={STATUS_PILL}>
           {searching ? (
             <>
               <LoaderCircleIcon className="animate-spin motion-reduce:animate-none" />

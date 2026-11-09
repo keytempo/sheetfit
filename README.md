@@ -34,8 +34,8 @@ Everything runs in the browser. Photos are read into memory as object URLs and a
   file. Structure, image rules, the print path and what each browser allows:
   [`docs/pdf-export.md`](docs/pdf-export.md).
 - **Packing time limit.** Print options > Layout > Packing time limit (1 s to 10 min, 3 s by default)
-  is how long the packer may search. When it stops because of the limit the preview says "Time limit
-  reached" and offers Continue, which searches again from the best layout found, for another limit,
+  is how long the packer may search. When it stops because of the limit the preview shows a Continue
+  pill, which searches again from the best layout found, for another limit,
   as often as wanted. It is not part of a preset. See [`docs/packing.md`](docs/packing.md).
 - **Saved work.** Refreshing or closing the app loses nothing: the photos (original bytes, so exports
   stay lossless), their order, copies and sizes are saved on this device in IndexedDB as they change

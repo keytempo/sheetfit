@@ -300,7 +300,7 @@ function sample(raw, width, boxes) {
   )
 
   // Determinism: the same export again gives the same bytes.
-  await page.getByRole('button', { name: 'Done' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Close' }).click()
   await page.waitForTimeout(400)
   const second = await download(page, 'all-again.pdf')
   test.check(
@@ -308,7 +308,7 @@ function sample(raw, width, boxes) {
     sha(first.bytes) === sha(second.bytes),
     `${first.bytes.length} vs ${second.bytes.length}`,
   )
-  await page.getByRole('button', { name: 'Done' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Close' }).click()
 
   test.check(
     'only same-origin requests (the page and its own blob: URLs)',
@@ -377,7 +377,7 @@ function sample(raw, width, boxes) {
     'nothing but images and guides is on the page (no text, no fonts)',
     !/\/Font|BT\n/.test(content),
   )
-  await page.getByRole('button', { name: 'Done' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Close' }).click()
   await app.close()
 }
 

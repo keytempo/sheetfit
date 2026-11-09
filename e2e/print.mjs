@@ -128,8 +128,10 @@ const blobBytes = async (page, url) =>
 
   const buttons = await dialog(page).getByRole('button').allInnerTexts()
   t.check(
-    'the dialog offers Done, Print and Download PDF',
-    ['Done', 'Print', 'Download PDF'].every((name) => buttons.some((b) => b.trim() === name)),
+    'the dialog offers Print and Download PDF, and has no Done button (it closes with its X and Escape)',
+    ['Print', 'Download PDF'].every((name) => buttons.some((b) => b.trim() === name)) &&
+      !buttons.some((b) => b.trim() === 'Done') &&
+      (await dialog(page).getByRole('button', { name: 'Close' }).count()) === 1,
     buttons.join(' | '),
   )
   t.check(
@@ -144,8 +146,8 @@ const blobBytes = async (page, url) =>
       (await classes('Print')).includes('border-input'),
   )
   t.check(
-    'one short line says to print at actual size',
-    /Actual size.*100%.*not .Fit to page./.test(await dialog(page).innerText()),
+    'the dialog carries no print-scaling tip',
+    !/Actual size|Fit to page|100%/.test(await dialog(page).innerText()),
   )
   const text = await dialog(page).innerText()
   t.check(
@@ -253,7 +255,7 @@ const blobBytes = async (page, url) =>
   t.check('a second Download PDF saves again', app.downloads.length === 2)
 
   // Closing releases everything.
-  await dialog(page).getByRole('button', { name: 'Done' }).click()
+  await dialog(page).getByRole('button', { name: 'Close' }).click()
   await page.waitForFunction(() => document.querySelectorAll('iframe').length === 0, null, {
     timeout: 5000,
   })
@@ -340,7 +342,7 @@ for (const [label, options] of [
     (await status(page)).some((s) => s.includes('opened in a new tab')),
   )
   await tab.close()
-  await dialog(page).getByRole('button', { name: 'Done' }).click()
+  await dialog(page).getByRole('button', { name: 'Close' }).click()
   const url = (await urls(page)).created[0]
   t.check(
     'the URL is kept a moment after closing, for the tab that may still be reading it',
@@ -408,12 +410,12 @@ for (const [label, options] of [
   const fit = await page.evaluate(() => {
     const box = document.querySelector('[role=dialog]').getBoundingClientRect()
     const buttons = [...document.querySelectorAll('[role=dialog] button')]
-      .filter((b) => ['Done', 'Print', 'Download PDF'].includes(b.textContent.trim()))
+      .filter((b) => ['Print', 'Download PDF'].includes(b.textContent.trim()))
       .map((b) => b.getBoundingClientRect())
     return {
       dialogInside: box.left >= 0 && box.right <= innerWidth,
       buttonsInside:
-        buttons.length === 3 &&
+        buttons.length === 2 &&
         buttons.every(
           (b) => b.left >= 0 && b.right <= innerWidth && b.bottom <= innerHeight && b.height >= 36,
         ),
@@ -424,7 +426,7 @@ for (const [label, options] of [
     }
   })
   t.check(
-    '390 px: the dialog and all three buttons are on screen and no wider than the screen',
+    '390 px: the dialog and both buttons are on screen and no wider than the screen',
     fit.dialogInside && fit.buttonsInside && !fit.pageOverflow && !fit.dialogOverflow,
     JSON.stringify(fit),
   )

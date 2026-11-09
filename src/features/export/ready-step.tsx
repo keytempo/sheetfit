@@ -33,15 +33,15 @@ interface ReadyStepProps {
   result: ExportResult
   /** Copies that fit on no sheet and so are not in the PDF. */
   omitted: number
-  onClose: () => void
 }
 
 /**
  * The finished PDF. Nothing has been saved or printed yet: Download PDF saves it and Print sends it
- * to the printer from memory, each as often as wanted and in any order. The print session lives as
+ * to the printer from memory, each as often as wanted and in any order. The dialog's own close
+ * button (and Escape) closes it. The print session lives as
  * long as this step does, so its object URL and hidden frame are released when the dialog closes.
  */
-export function ReadyStep({ result, omitted, onClose }: ReadyStepProps) {
+export function ReadyStep({ result, omitted }: ReadyStepProps) {
   const session = useRef<PrintSession | null>(null)
   const [printing, setPrinting] = useState(false)
   const [outcome, setOutcome] = useState<PrintOutcome>('dialog')
@@ -84,10 +84,6 @@ export function ReadyStep({ result, omitted, onClose }: ReadyStepProps) {
           </p>
         </div>
       </div>
-      <p className="text-xs text-muted-foreground">
-        When you print, choose “Actual size” or 100% in the print dialog, not “Fit to page”, so
-        every photo prints at its exact size.
-      </p>
       {omitted > 0 && (
         <p
           role="status"
@@ -110,9 +106,6 @@ export function ReadyStep({ result, omitted, onClose }: ReadyStepProps) {
         {note?.text}
       </div>
       <DialogFooter>
-        <Button variant="ghost" onClick={onClose}>
-          Done
-        </Button>
         {/* Not disabled while it works: a disabled button drops the keyboard focus. Pressing it again
             during a print shares that print's result instead of starting another. */}
         <Button variant="outline" aria-busy={printing} onClick={() => void print()}>

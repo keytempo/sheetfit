@@ -106,7 +106,7 @@ function ExportRun({
 
       {state.status === 'success' && (
         <Step key="success">
-          <ReadyStep result={state.result} omitted={omitted} onClose={onClose} />
+          <ReadyStep result={state.result} omitted={omitted} />
         </Step>
       )}
 

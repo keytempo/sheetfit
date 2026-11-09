@@ -591,16 +591,16 @@ shows a layout only as the answer for the input it was computed for.
 
 ### 10.4 The status
 
-| State                                                   | Badge                             |
-| ------------------------------------------------------- | --------------------------------- |
-| no answer yet for the latest inputs, or still searching | "Optimizing…"                     |
-| `status === 'optimal'`                                  | "Optimal"                         |
-| finished with `status === 'best-found'`                 | "Best found"                      |
-| stopped at the time limit, not optimal, not exhausted   | "Time limit reached" and Continue |
+| State                                                   | Badge                                                |
+| ------------------------------------------------------- | ---------------------------------------------------- |
+| no answer yet for the latest inputs, or still searching | "Optimizing…"                                        |
+| `status === 'optimal'`                                  | "Optimal"                                            |
+| finished with `status === 'best-found'`                 | "Best found"                                         |
+| stopped at the time limit, not optimal, not exhausted   | a "Continue" pill (read out as "Time limit reached") |
 
 Strict order never refines (its layout is final), so it goes straight to "Optimal" or "Best found".
-A search that stopped because it used up the time limit shows "Time limit reached" with a Continue
-button instead of "Best found" ([10.6](#106-the-time-limit-and-continue)).
+A search that stopped because it used up the time limit shows just a "Continue" pill, styled like
+the "Optimal" one, instead of "Best found" ([10.6](#106-the-time-limit-and-continue)).
 Copies that fit on no sheet get a warning badge above it ("1 copy does not fit on the sheet"), and
 an export says how many it left out.
 
@@ -672,7 +672,8 @@ crashes or is terminated nothing is left to continue and Continue is no longer o
 **What the person sees.** `usePacking` tracks a phase for the current inputs (`searching`,
 `time-limit`, `done`) and returns `limitReached` and `resume`. `limitReached` is true only when the
 layout for the current inputs is on screen, the search stopped at the limit and the layout is not
-proven optimal. The status then reads "Time limit reached" with a Continue button; Continue returns
+proven optimal. The status then shows a single "Continue" pill (no icon, no other visible words, the same pill
+tokens as "Optimal" and no hover effect, with an invisible clickable margin round it, 3 px, 9 px on touch screens, so a 22 px pill is still an easy target; screen readers are told "Time limit reached"); Continue returns
 the status to "Optimizing…", moves the keyboard focus to the sheets (the button is gone), and when
 the continued search stops at the limit again the button returns.
 

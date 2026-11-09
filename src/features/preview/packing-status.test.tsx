@@ -50,20 +50,46 @@ describe('PackingStatus', () => {
     }
   })
 
-  it('says the time limit was reached, and offers Continue, instead of Best found', () => {
+  it('shows just Continue when the time limit was reached: no icon, no label, no other status', () => {
     const html = render(withStatus('best-found'), false, true)
-    expect(html).toContain('Time limit reached')
     expect(html).toContain('>Continue<')
     expect(html).toContain('aria-label="Continue searching for a tighter layout"')
     expect(html).not.toContain('Best found')
     expect(html).not.toContain('Optimizing')
+    expect(html).not.toContain('<svg')
   })
 
-  it('announces the time limit as a status, and keeps Continue out of the announcement', () => {
+  it('tells screen readers the time limit was reached, without showing it', () => {
     const html = render(withStatus('best-found'), false, true)
-    const status = html.match(/<span role="status"[^>]*>(.*?)<\/span>/)?.[1] ?? ''
-    expect(status).toContain('Time limit reached')
-    expect(status).not.toContain('Continue')
+    expect(html).toMatch(/<span role="status" class="sr-only">Time limit reached<\/span>/)
+    expect(html).not.toMatch(/<button[^>]*>[^<]*Time limit/)
+  })
+
+  const classesOf = (html: string, tag: 'button' | 'span', containing: string) => {
+    const match = [...html.matchAll(new RegExp(`<${tag}[^>]*class="([^"]*)"`, 'g'))]
+      .map((m) => m[1])
+      .find((classes) => classes.includes(containing))
+    return (match ?? '').split(/\s+/)
+  }
+
+  it('looks exactly like the Optimal pill: the same badge and colour tokens, and nothing on hover', () => {
+    const optimal = classesOf(render(withStatus('optimal')), 'span', 'backdrop-blur-sm')
+    const pill = classesOf(
+      render(withStatus('best-found'), false, true),
+      'button',
+      'backdrop-blur-sm',
+    )
+    expect(optimal.length).toBeGreaterThan(5)
+    for (const token of optimal) expect(pill).toContain(token)
+    expect(pill.filter((token) => token.includes('hover:'))).toEqual([])
+    // The only things added are what a button needs, none of it visible: it takes clicks, shows a
+    // pointer, has a focus ring, and has a clickable margin round it.
+    const added = pill.filter((token) => !optimal.includes(token))
+    expect(
+      added.every((token) =>
+        /pointer|focus-visible|outline|after:|relative|overflow-visible/.test(token),
+      ),
+    ).toBe(true)
   })
 
   it('shows Optimizing… while a continued search runs, with no Continue to press again', () => {

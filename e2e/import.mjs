@@ -156,7 +156,7 @@ async function main() {
     t.check('no photo is listed before the batch is complete', during.rows === 0, `${during.rows}`)
     t.check(
       'the toolbar says how far it is',
-      /Adding \d+ of 8…/.test(during.progress),
+      /Importing \d+ of 8…/.test(during.progress),
       during.progress.slice(0, 120),
     )
     await waitForRows(page, 8)
